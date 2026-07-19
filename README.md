@@ -24,8 +24,8 @@ flowchart TD
     P2 --> P3["Phase 3: Encoders"]:::done
     P3 --> P4["Phase 4: WS2812B LEDs"]:::done
     P4 --> P5["Phase 5: Merge + two-way protocol"]:::done
-    P5 --> P6["Phase 6: App serial reader"]:::current
-    P6 --> P7["Phase 7: Config format"]:::todo
+    P5 --> P6["Phase 6: App serial reader"]:::done
+    P6 --> P7["Phase 7: Config format"]:::current
     P7 --> P8["Phase 8: Keyboard shortcuts"]:::todo
     P8 --> P9["Phase 9: Audio playback"]:::todo
     P9 --> P10["Phase 10: OBS control"]:::todo
