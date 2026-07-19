@@ -7,11 +7,11 @@ track. Status is updated manually as the project progresses.
 flowchart TD
     S["Setup: Git + GitHub + Docs"]:::done --> P0["Phase 0: Hardware check"]:::done
     P0 --> P1["Phase 1: Firmware bring-up"]:::done
-    P1 --> P2["Phase 2: Button matrix"]:::current
-    P2 --> P3["Phase 3: Encoders"]:::todo
-    P3 --> P4["Phase 4: WS2812B LEDs"]:::todo
-    P4 --> P5["Phase 5: Merge + two-way protocol"]:::todo
-    P5 --> P6["Phase 6: App serial reader"]:::todo
+    P1 --> P2["Phase 2: Button matrix"]:::done
+    P2 --> P3["Phase 3: Encoders"]:::done
+    P3 --> P4["Phase 4: WS2812B LEDs"]:::done
+    P4 --> P5["Phase 5: Merge + two-way protocol"]:::done
+    P5 --> P6["Phase 6: App serial reader"]:::current
     P6 --> P7["Phase 7: Config format"]:::todo
     P7 --> P8["Phase 8: Keyboard shortcuts"]:::todo
     P8 --> P9["Phase 9: Audio playback"]:::todo
@@ -36,11 +36,11 @@ flowchart TD
 - [x] Setup — Git, GitHub repo, README, LICENSE, .gitignore, CLAUDE.md
 - [x] Phase 0 — Hardware check (confirmed: Pro Micro 5V / 16MHz variant, no level shifter needed)
 - [x] Phase 1 — Firmware bring-up (toolchain, blink, serial hello world)
-- [ ] Phase 2 — Firmware: button matrix scanning **← current**
-- [ ] Phase 3 — Firmware: rotary encoders
-- [ ] Phase 4 — Firmware: WS2812B LEDs
-- [ ] Phase 5 — Firmware: merge + two-way serial protocol
-- [ ] Phase 6 — App: serial reader (pyserial)
+- [x] Phase 2 — Firmware: button matrix scanning (all 16 positions confirmed)
+- [x] Phase 3 — Firmware: rotary encoders (CW/CCW/PUSH logic verified on 1 of 3 encoders; other 2 are only repeats of the same wiring, to be confirmed when in hand)
+- [x] Phase 4 — Firmware: WS2812B LEDs (chaining + color order confirmed on 9 spare bare LEDs; original 100+ LED reel is faulty, unresolved — see CLAUDE.md)
+- [x] Phase 5 — Firmware: merge (matrix + encoder + LEDs, one sketch) done; **two-way protocol (PC→firmware LED commands) deliberately deferred** — revisit before Phase 14
+- [ ] Phase 6 — App: serial reader (pyserial) **← current**
 - [ ] Phase 7 — App: config file format (button → action mapping)
 - [ ] Phase 8 — App: keyboard shortcut execution
 - [ ] Phase 9 — App: audio playback

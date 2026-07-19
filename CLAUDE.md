@@ -40,9 +40,21 @@ teaching over speed.
   per position, cathode toward the column (standard anti-ghosting).
 - 3 incremental rotary encoders (KY-040/EC11) with push-button; each click =
   real mute (not zero-volume) of its associated audio channel.
-- Individually addressable WS2812B LEDs, 1 per key, single chain on 1 data
-  pin; ~330Ω resistor in series on data, ~1000µF capacitor near the first
-  LED; brightness capped in software (USB current budget).
+- Individually addressable WS2812B-family LEDs, 1 per key, single chain on 1
+  data pin (D16/MOSI); ~330Ω resistor in series on data, ~1000µF capacitor
+  near the first LED (skippable for small bench tests, needed on the real
+  16-LED build); brightness capped in software (USB current budget).
+- **Color order confirmed via bench test: `NEO_RGB`, not the WS2812B-typical
+  `NEO_GRB`** — tested on a bare 4-pin through-hole LED (legs, in order from
+  the cut-corner side: DIN, VDD, GND, DOUT). Don't assume GRB when wiring the
+  final build; verify per batch if the LED source changes.
+- The original 100+ LED reel (WS2812B DC5V, confirmed via listing) did not
+  light in testing (ruled out: wiring, continuity, resistor, pin, board
+  health, timing frequency, color order — all checked). Root cause not yet
+  confirmed, most likely a dead first LED in the chain. A bare spare LED
+  wired the same way worked correctly, isolating the fault to the reel
+  itself. Unresolved: either find a working segment further down the reel,
+  or the reel needs replacing before the final 16-LED build.
 - Pinout closed, 18/18 pins used, no spares.
 
 ### Firmware ↔ app protocol
@@ -84,6 +96,7 @@ teaching over speed.
 ## Open items
 - Physical case layout (researching 3D-printable models).
 - Exact config file format for the app.
+- **Two-way serial protocol (PC → firmware LED commands, e.g. `LED:MODE:SOLID:RED`) deliberately deferred** — firmware currently only sends events, doesn't yet parse incoming commands. Must exist before Phase 14 (full integration), since that's how the app will drive LED behavior (including the 2FX indicator).
 - `sounddevice`/`pygame.mixer` and `pyautogui`/`keyboard` — decide during
   implementation.
 
