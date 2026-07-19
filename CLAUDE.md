@@ -86,7 +86,12 @@ teaching over speed.
 - Audio playback: **`sounddevice`** (decided — supports targeting a specific
   output device per call, `pygame.mixer` doesn't; needed for routing sound
   effects into a call/stream, not just local playback). Needs `soundfile`
-  alongside it for decoding.
+  alongside it for decoding. **Confirmed working**, routed a tone through
+  VB-Cable's "CABLE Input" (WASAPI) and heard it via Windows' "Listen to this
+  device" loopback on "CABLE Output." Gotcha: the WASAPI CABLE Input device
+  requires **48000Hz** specifically (`PortAudioError: Invalid sample rate` at
+  44100Hz) — check `sd.query_devices(index)['default_samplerate']` per
+  device rather than assuming 44100.
 - **Routing sound into OBS/streams: solved for free, nothing to build.** OBS
   28+'s built-in "Application Audio Capture" source grabs audio from a
   specific process directly — no virtual device needed, works automatically

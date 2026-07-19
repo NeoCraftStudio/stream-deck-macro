@@ -14,8 +14,8 @@ flowchart TD
     P5 --> P6["Phase 6: App serial reader"]:::done
     P6 --> P7["Phase 7: Config format"]:::done
     P7 --> P8["Phase 8: Keyboard shortcuts"]:::done
-    P8 --> P9["Phase 9: Audio playback"]:::current
-    P9 --> P10["Phase 10: OBS control"]:::todo
+    P8 --> P9["Phase 9: Audio playback"]:::done
+    P9 --> P10["Phase 10: OBS control"]:::current
     P10 --> P11["Phase 11: Per-process mute"]:::todo
     P11 --> P12["Phase 12: 2FX state machine"]:::todo
     P12 --> P13["Phase 13: GUI (PySide6)"]:::todo
@@ -43,8 +43,8 @@ flowchart TD
 - [x] Phase 6 — App: serial reader (pyserial), confirmed reading BTN/ENC events live
 - [x] Phase 7 — App: config file format (JSON schema designed, `config.json` sample + loader confirmed working)
 - [x] Phase 8 — App: keyboard shortcut execution (`pyautogui`, confirmed via config-driven `ctrl+c` test)
-- [ ] Phase 9 — App: audio playback **← current**
-- [ ] Phase 10 — App: OBS control (obsws-python)
+- [x] Phase 9 — App: audio playback (`sounddevice`, confirmed routing through VB-Cable to a specific device)
+- [ ] Phase 10 — App: OBS control (obsws-python) **← current**
 - [ ] Phase 11 — App: real per-process mute (pycaw)
 - [ ] Phase 12 — App: 2FX layer state machine
 - [ ] Phase 13 — App: GUI (PySide6)
