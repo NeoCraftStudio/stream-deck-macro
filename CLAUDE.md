@@ -131,8 +131,7 @@ need entries; missing = unmapped. Written/read by the GUI once it exists
 ## Open items
 - Physical case layout (researching 3D-printable models).
 - **Two-way serial protocol (PC → firmware LED commands, e.g. `LED:MODE:SOLID:RED`) deliberately deferred** — firmware currently only sends events, doesn't yet parse incoming commands. Must exist before Phase 14 (full integration), since that's how the app will drive LED behavior (including the 2FX indicator).
-- `sounddevice`/`pygame.mixer` and `pyautogui`/`keyboard` — decide during
-  implementation.
+- **Discord audio routing driver decision (bundle vs. paid license vs. manual install) deferred to pre-launch** — see the "Routing sound into Discord" note above.
 
 ## Do NOT
 - Assume automatic progression to the next step.
