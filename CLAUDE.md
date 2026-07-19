@@ -93,9 +93,17 @@ teaching over speed.
 - Mapping config saved locally (format likely JSON, not finalized), reloaded
   when the deck connects.
 
+## Config file format (decided)
+JSON, see `config.json` for a live sample. Shape: `settings.2fx_timeout_seconds`,
+`buttons.<id>.layer1/layer2` (each `{type, value}`, types: `keyboard`,
+`obs_scene`, `sound`, `empty`), `encoders.<id>.target` (`"system"` or
+`"app:<processname>"`). Button 15 (2FX key) never appears in `buttons` — it's
+the layer toggle, not a mappable action. Only configured buttons/encoders
+need entries; missing = unmapped. Written/read by the GUI once it exists
+(Phase 13) — hand-edited for now to test the loader.
+
 ## Open items
 - Physical case layout (researching 3D-printable models).
-- Exact config file format for the app.
 - **Two-way serial protocol (PC → firmware LED commands, e.g. `LED:MODE:SOLID:RED`) deliberately deferred** — firmware currently only sends events, doesn't yet parse incoming commands. Must exist before Phase 14 (full integration), since that's how the app will drive LED behavior (including the 2FX indicator).
 - `sounddevice`/`pygame.mixer` and `pyautogui`/`keyboard` — decide during
   implementation.

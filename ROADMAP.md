@@ -12,8 +12,8 @@ flowchart TD
     P3 --> P4["Phase 4: WS2812B LEDs"]:::done
     P4 --> P5["Phase 5: Merge + two-way protocol"]:::done
     P5 --> P6["Phase 6: App serial reader"]:::done
-    P6 --> P7["Phase 7: Config format"]:::current
-    P7 --> P8["Phase 8: Keyboard shortcuts"]:::todo
+    P6 --> P7["Phase 7: Config format"]:::done
+    P7 --> P8["Phase 8: Keyboard shortcuts"]:::current
     P8 --> P9["Phase 9: Audio playback"]:::todo
     P9 --> P10["Phase 10: OBS control"]:::todo
     P10 --> P11["Phase 11: Per-process mute"]:::todo
@@ -41,8 +41,8 @@ flowchart TD
 - [x] Phase 4 — Firmware: WS2812B LEDs (chaining + color order confirmed on 9 spare bare LEDs; original 100+ LED reel is faulty, unresolved — see CLAUDE.md)
 - [x] Phase 5 — Firmware: merge (matrix + encoder + LEDs, one sketch) done; **two-way protocol (PC→firmware LED commands) deliberately deferred** — revisit before Phase 14
 - [x] Phase 6 — App: serial reader (pyserial), confirmed reading BTN/ENC events live
-- [ ] Phase 7 — App: config file format (button → action mapping) **← current**
-- [ ] Phase 8 — App: keyboard shortcut execution
+- [x] Phase 7 — App: config file format (JSON schema designed, `config.json` sample + loader confirmed working)
+- [ ] Phase 8 — App: keyboard shortcut execution **← current**
 - [ ] Phase 9 — App: audio playback
 - [ ] Phase 10 — App: OBS control (obsws-python)
 - [ ] Phase 11 — App: real per-process mute (pycaw)

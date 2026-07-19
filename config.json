@@ -1,0 +1,18 @@
+{
+  "settings": {
+    "2fx_timeout_seconds": 10
+  },
+  "buttons": {
+    "0": {
+      "layer1": { "type": "keyboard", "value": "ctrl+c" },
+      "layer2": { "type": "sound", "value": "sounds/applause.mp3" }
+    },
+    "1": {
+      "layer1": { "type": "obs_scene", "value": "Camera + Game" },
+      "layer2": { "type": "empty" }
+    }
+  },
+  "encoders": {
+    "1": { "target": "system" }
+  }
+}
