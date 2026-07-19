@@ -33,9 +33,9 @@ teaching over speed.
 ## Architecture (decided, closed)
 
 ### Hardware
-- MCU: Arduino Pro Micro (ATmega32U4) — 5V vs 3.3V variant not yet confirmed
-  physically on the board (determines if a level shifter is needed for the
-  LEDs).
+- MCU: Arduino Pro Micro (ATmega32U4), **5V / 16MHz variant** (confirmed via
+  crystal marking). No level shifter needed for the WS2812B LEDs — both run
+  on 5V logic.
 - 4x4 button matrix (16 positions = 15 buttons + 1 "2FX" key), 1N4148 diode
   per position, cathode toward the column (standard anti-ghosting).
 - 3 incremental rotary encoders (KY-040/EC11) with push-button; each click =
@@ -83,7 +83,6 @@ teaching over speed.
 
 ## Open items
 - Physical case layout (researching 3D-printable models).
-- Confirm Pro Micro voltage variant (5V vs 3.3V).
 - Exact config file format for the app.
 - `sounddevice`/`pygame.mixer` and `pyautogui`/`keyboard` — decide during
   implementation.
