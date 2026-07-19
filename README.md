@@ -19,8 +19,8 @@ defined; implementation hasn't started yet.
 ```mermaid
 flowchart TD
     S["Setup: Git + GitHub + Docs"]:::done --> P0["Phase 0: Hardware check"]:::done
-    P0 --> P1["Phase 1: Firmware bring-up"]:::current
-    P1 --> P2["Phase 2: Button matrix"]:::todo
+    P0 --> P1["Phase 1: Firmware bring-up"]:::done
+    P1 --> P2["Phase 2: Button matrix"]:::current
     P2 --> P3["Phase 3: Encoders"]:::todo
     P3 --> P4["Phase 4: WS2812B LEDs"]:::todo
     P4 --> P5["Phase 5: Merge + two-way protocol"]:::todo
