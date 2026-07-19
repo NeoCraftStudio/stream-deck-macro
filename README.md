@@ -26,8 +26,8 @@ flowchart TD
     P4 --> P5["Phase 5: Merge + two-way protocol"]:::done
     P5 --> P6["Phase 6: App serial reader"]:::done
     P6 --> P7["Phase 7: Config format"]:::done
-    P7 --> P8["Phase 8: Keyboard shortcuts"]:::current
-    P8 --> P9["Phase 9: Audio playback"]:::todo
+    P7 --> P8["Phase 8: Keyboard shortcuts"]:::done
+    P8 --> P9["Phase 9: Audio playback"]:::current
     P9 --> P10["Phase 10: OBS control"]:::todo
     P10 --> P11["Phase 11: Per-process mute"]:::todo
     P11 --> P12["Phase 12: 2FX state machine"]:::todo

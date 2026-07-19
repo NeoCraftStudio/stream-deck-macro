@@ -83,12 +83,38 @@ teaching over speed.
   screen (2FX timeout, encoder → app/audio-device mapping).
 - Serial: `pyserial`.
 - Real per-process mute (Windows Core Audio API): `pycaw`.
-- Audio playback: `sounddevice` or `pygame.mixer` — decision pending,
-  during implementation.
+- Audio playback: **`sounddevice`** (decided — supports targeting a specific
+  output device per call, `pygame.mixer` doesn't; needed for routing sound
+  effects into a call/stream, not just local playback). Needs `soundfile`
+  alongside it for decoding.
+- **Routing sound into OBS/streams: solved for free, nothing to build.** OBS
+  28+'s built-in "Application Audio Capture" source grabs audio from a
+  specific process directly — no virtual device needed, works automatically
+  since Windows separates audio per-process.
+- **Routing sound into Discord (or anything without OBS's capture feature):
+  requires a virtual microphone driver — no way around it, Discord has no
+  per-app capture equivalent.** Investigated whether one could be bundled
+  into our own installer (2026-07-18):
+  - VB-Audio VB-Cable: free for personal use, but commercial
+    bundling/redistribution requires a paid, negotiated license directly
+    with VB-Audio (not a flat fee).
+  - `VirtualDrivers/Virtual-Audio-Driver` (GitHub, MIT-licensed, free to
+    bundle) was tested as an embeddable alternative — **installed but failed
+    with Code 52** ("Windows cannot verify the digital signature"), despite
+    the release being labeled "Signed." Fix would be enabling Windows Test
+    Signing Mode, which is disqualifying for a shipped product (desktop
+    watermark, breaks other signed-driver/DRM/anti-cheat software
+    system-wide) — not something we can ask customers to do. Driver was
+    uninstalled; not currently viable.
+  - **Current plan: use VB-Cable manually for our own dev/testing now.
+    Revisit the paid VB-Audio distribution license (or re-test the MIT
+    driver if it matures out of beta) once actually close to shipping** —
+    this is a "before selling" decision, not a "Phase 9" one.
 - OBS: `obsws-python` (obs-websocket v5, native since OBS 28) — direct scene
   command, not via OBS hotkeys.
-- Simulating keyboard shortcuts: `pyautogui` or `keyboard` — decision
-  pending.
+- Simulating keyboard shortcuts: **`pyautogui`** (decided — no admin-rights
+  requirement for a packaged `.exe`, unlike `keyboard`; confirmed working via
+  config-driven test).
 - Final packaging: PyInstaller → `.exe`.
 - Mapping config saved locally (format likely JSON, not finalized), reloaded
   when the deck connects.
