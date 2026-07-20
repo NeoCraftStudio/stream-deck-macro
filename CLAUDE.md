@@ -89,6 +89,17 @@ teaching over speed.
 - GUI: PySide6 (Qt) — clickable visual grid, per-key config popup
   (keyboard shortcut / OBS scene / sound file / empty), general settings
   screen (2FX timeout, encoder → app/audio-device mapping).
+- **Python interpreter: must be a standalone python.org install, NOT
+  Anaconda.** Discovered 2026-07-19 — `PySide6` fails to import under
+  Anaconda's Python with `ImportError: DLL load failed while importing
+  QtWidgets: The specified procedure could not be found`, even inside an
+  isolated venv (venv doesn't isolate away from the base interpreter's
+  DLL/PATH environment). This is a known, documented conflict — the Qt
+  Project's own guidance is to avoid Anaconda for PySide6 projects. Fixed by
+  installing a separate standalone Python (via `py install`, the
+  `python.org` install manager) and recreating `.venv` from that interpreter
+  instead (`py -V:3.14 -m venv .venv`). Anaconda itself was left untouched —
+  this project's venv just now points at a different base interpreter.
 - Serial: `pyserial`.
 - Real per-process mute (Windows Core Audio API): `pycaw`.
 - Audio playback: **`sounddevice`** (decided — supports targeting a specific
