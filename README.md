@@ -11,8 +11,9 @@ playback, and real per-app mute.
 
 ## Status
 
-Planning / study phase. Hardware architecture and protocol are already
-defined; implementation hasn't started yet.
+In active development. Firmware phases (matrix, encoder, LEDs) verified on
+hardware; app-side phases (serial reader, config, keyboard/audio/OBS
+actions, 2FX logic) verified individually. Full roadmap below.
 
 ## Roadmap
 
@@ -30,8 +31,8 @@ flowchart TD
     P8 --> P9["Phase 9: Audio playback"]:::done
     P9 --> P10["Phase 10: OBS control"]:::done
     P10 --> P11["Phase 11: Per-process mute"]:::done
-    P11 --> P12["Phase 12: 2FX state machine"]:::current
-    P12 --> P13["Phase 13: GUI (PySide6)"]:::todo
+    P11 --> P12["Phase 12: 2FX state machine"]:::done
+    P12 --> P13["Phase 13: GUI (PySide6)"]:::current
     P13 --> P14["Phase 14: Full integration"]:::todo
     P14 --> P15["Phase 15: Packaging .exe"]:::todo
     P0 -.-> C["Case: 3D-printed enclosure"]:::todo

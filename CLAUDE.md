@@ -33,6 +33,10 @@ teaching over speed.
   put the "why"/explanation as prose first, then a clear separator, then the
   actual steps to do as a bare numbered list — no explanation mixed into the
   steps themselves. Keep step items to just the action, nothing else.
+- **No teaching for Arduino/C++ firmware code** (requested 2026-07-19) — the
+  user does not want to learn Arduino/C++, only Git, GitHub, and Python (the
+  original scope). For firmware work: just give the code and the steps, no
+  concept explanations. Python still gets brief "why" context as before.
 
 ## Architecture (decided, closed)
 
@@ -136,6 +140,31 @@ JSON, see `config.json` for a live sample. Shape: `settings.2fx_timeout_seconds`
 the layer toggle, not a mappable action. Only configured buttons/encoders
 need entries; missing = unmapped. Written/read by the GUI once it exists
 (Phase 13) — hand-edited for now to test the loader.
+
+## Hardware status (2026-07-19)
+**Resolved — same Pro Micro recovered, no replacement needed.** Board
+briefly failed USB enumeration ("Unknown USB Device (Device Descriptor
+Request Failed)", `butterfly_recv` upload errors) after a wrong-processor-
+setting upload attempt (3.3V/8MHz selected instead of the correct 5V/16MHz —
+confirmed this couldn't have caused it, see below). Cable, port, and driver
+reinstall were all ruled out as the cause. **Fix: the double-tap RST/GND
+jumper reset has to happen *while the IDE is actively uploading* (right
+after "Uploading..." appears), not before/while just plugging in** — timing
+it that way is what finally got the bootloader to respond; earlier attempts
+tapped reset at the wrong moment and looked identical to a dead board. If
+this happens again, that's the fix to reach for first, before assuming
+hardware failure.
+
+Confirmed NOT caused by the wrong-processor-setting mix-up: normal sketch
+uploads via the avr109 bootloader protocol cannot write fuse bits (the only
+thing that could actually brick an AVR chip), and every upload attempt with
+the wrong setting failed partway through anyway, so nothing was ever written
+to the board from that.
+
+Debounce fix for the button matrix (mirrors the encoder's debounce) is now
+**verified on hardware** — re-uploaded and confirmed no more duplicate
+`BTN:n:DOWN` events per press. Matrix, encoder, and LEDs all reconfirmed
+working after the reconnection.
 
 ## Open items
 - Physical case layout (researching 3D-printable models).

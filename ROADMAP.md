@@ -3,6 +3,11 @@
 Each phase is a prerequisite for the next one, unless marked as a parallel
 track. Status is updated manually as the project progresses.
 
+> **🟢 Resolved (2026-07-19): the Pro Micro's USB enumeration failure was a
+> reset-timing issue (double-tap RST/GND needs to happen mid-upload, not
+> before), not a hardware fault — same board recovered, no replacement
+> needed. Details in `CLAUDE.md`.**
+
 ```mermaid
 flowchart TD
     S["Setup: Git + GitHub + Docs"]:::done --> P0["Phase 0: Hardware check"]:::done
@@ -17,8 +22,8 @@ flowchart TD
     P8 --> P9["Phase 9: Audio playback"]:::done
     P9 --> P10["Phase 10: OBS control"]:::done
     P10 --> P11["Phase 11: Per-process mute"]:::done
-    P11 --> P12["Phase 12: 2FX state machine"]:::current
-    P12 --> P13["Phase 13: GUI (PySide6)"]:::todo
+    P11 --> P12["Phase 12: 2FX state machine"]:::done
+    P12 --> P13["Phase 13: GUI (PySide6)"]:::current
     P13 --> P14["Phase 14: Full integration"]:::todo
     P14 --> P15["Phase 15: Packaging .exe"]:::todo
     P0 -.-> C["Case: 3D-printed enclosure"]:::todo
@@ -46,8 +51,8 @@ flowchart TD
 - [x] Phase 9 — App: audio playback (`sounddevice`, confirmed routing through VB-Cable to a specific device)
 - [x] Phase 10 — App: OBS control (`obsws-python`, confirmed scene switch)
 - [x] Phase 11 — App: real per-process mute (`pycaw`, mute + unmute both confirmed on `opera.exe`)
-- [ ] Phase 12 — App: 2FX layer state machine **← current**
-- [ ] Phase 13 — App: GUI (PySide6)
+- [x] Phase 12 — App: 2FX layer state machine (arm/cancel/timeout/layer-2-fire all confirmed against real hardware)
+- [ ] Phase 13 — App: GUI (PySide6) **← current**
 - [ ] Phase 14 — Full integration (firmware + app, real hardware)
 - [ ] Phase 15 — Packaging (PyInstaller .exe)
 - [ ] Case — 3D-printed enclosure (parallel track, not blocking)
