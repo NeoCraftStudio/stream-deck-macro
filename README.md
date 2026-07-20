@@ -29,8 +29,8 @@ flowchart TD
     P7 --> P8["Phase 8: Keyboard shortcuts"]:::done
     P8 --> P9["Phase 9: Audio playback"]:::done
     P9 --> P10["Phase 10: OBS control"]:::done
-    P10 --> P11["Phase 11: Per-process mute"]:::current
-    P11 --> P12["Phase 12: 2FX state machine"]:::todo
+    P10 --> P11["Phase 11: Per-process mute"]:::done
+    P11 --> P12["Phase 12: 2FX state machine"]:::current
     P12 --> P13["Phase 13: GUI (PySide6)"]:::todo
     P13 --> P14["Phase 14: Full integration"]:::todo
     P14 --> P15["Phase 15: Packaging .exe"]:::todo

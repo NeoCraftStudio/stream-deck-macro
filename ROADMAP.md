@@ -16,8 +16,8 @@ flowchart TD
     P7 --> P8["Phase 8: Keyboard shortcuts"]:::done
     P8 --> P9["Phase 9: Audio playback"]:::done
     P9 --> P10["Phase 10: OBS control"]:::done
-    P10 --> P11["Phase 11: Per-process mute"]:::current
-    P11 --> P12["Phase 12: 2FX state machine"]:::todo
+    P10 --> P11["Phase 11: Per-process mute"]:::done
+    P11 --> P12["Phase 12: 2FX state machine"]:::current
     P12 --> P13["Phase 13: GUI (PySide6)"]:::todo
     P13 --> P14["Phase 14: Full integration"]:::todo
     P14 --> P15["Phase 15: Packaging .exe"]:::todo
@@ -45,8 +45,8 @@ flowchart TD
 - [x] Phase 8 — App: keyboard shortcut execution (`pyautogui`, confirmed via config-driven `ctrl+c` test)
 - [x] Phase 9 — App: audio playback (`sounddevice`, confirmed routing through VB-Cable to a specific device)
 - [x] Phase 10 — App: OBS control (`obsws-python`, confirmed scene switch)
-- [ ] Phase 11 — App: real per-process mute (pycaw) **← current**
-- [ ] Phase 12 — App: 2FX layer state machine
+- [x] Phase 11 — App: real per-process mute (`pycaw`, mute + unmute both confirmed on `opera.exe`)
+- [ ] Phase 12 — App: 2FX layer state machine **← current**
 - [ ] Phase 13 — App: GUI (PySide6)
 - [ ] Phase 14 — Full integration (firmware + app, real hardware)
 - [ ] Phase 15 — Packaging (PyInstaller .exe)
