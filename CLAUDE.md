@@ -29,6 +29,10 @@ teaching over speed.
 - This project is also an **English practice** — correct English mistakes
   when they happen, set off in a blockquote (`>`) so it's visually distinct
   from the rest of the reply.
+- **Format action steps separately from explanation** (requested 2026-07-19):
+  put the "why"/explanation as prose first, then a clear separator, then the
+  actual steps to do as a bare numbered list — no explanation mixed into the
+  steps themselves. Keep step items to just the action, nothing else.
 
 ## Architecture (decided, closed)
 

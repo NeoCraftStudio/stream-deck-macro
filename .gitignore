@@ -1,3 +1,6 @@
+# Secrets
+obs_secrets.json
+
 # Python
 __pycache__/
 *.pyc

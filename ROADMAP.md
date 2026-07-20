@@ -15,8 +15,8 @@ flowchart TD
     P6 --> P7["Phase 7: Config format"]:::done
     P7 --> P8["Phase 8: Keyboard shortcuts"]:::done
     P8 --> P9["Phase 9: Audio playback"]:::done
-    P9 --> P10["Phase 10: OBS control"]:::current
-    P10 --> P11["Phase 11: Per-process mute"]:::todo
+    P9 --> P10["Phase 10: OBS control"]:::done
+    P10 --> P11["Phase 11: Per-process mute"]:::current
     P11 --> P12["Phase 12: 2FX state machine"]:::todo
     P12 --> P13["Phase 13: GUI (PySide6)"]:::todo
     P13 --> P14["Phase 14: Full integration"]:::todo
@@ -44,8 +44,8 @@ flowchart TD
 - [x] Phase 7 — App: config file format (JSON schema designed, `config.json` sample + loader confirmed working)
 - [x] Phase 8 — App: keyboard shortcut execution (`pyautogui`, confirmed via config-driven `ctrl+c` test)
 - [x] Phase 9 — App: audio playback (`sounddevice`, confirmed routing through VB-Cable to a specific device)
-- [ ] Phase 10 — App: OBS control (obsws-python) **← current**
-- [ ] Phase 11 — App: real per-process mute (pycaw)
+- [x] Phase 10 — App: OBS control (`obsws-python`, confirmed scene switch)
+- [ ] Phase 11 — App: real per-process mute (pycaw) **← current**
 - [ ] Phase 12 — App: 2FX layer state machine
 - [ ] Phase 13 — App: GUI (PySide6)
 - [ ] Phase 14 — Full integration (firmware + app, real hardware)
