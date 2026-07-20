@@ -33,6 +33,10 @@ teaching over speed.
   put the "why"/explanation as prose first, then a clear separator, then the
   actual steps to do as a bare numbered list — no explanation mixed into the
   steps themselves. Keep step items to just the action, nothing else.
+- **Always give the entire file, never partial snippets/diffs** (requested
+  2026-07-19) — when Python code changes, paste the full, current contents
+  of the file being edited, not just the changed piece. Applies to all code
+  files in this project from here on.
 - **No teaching for Arduino/C++ firmware code** (requested 2026-07-19) — the
   user does not want to learn Arduino/C++, only Git, GitHub, and Python (the
   original scope). For firmware work: just give the code and the steps, no
@@ -86,9 +90,19 @@ teaching over speed.
   simplify without flagging it.
 
 ### Companion app (Python)
-- GUI: PySide6 (Qt) — clickable visual grid, per-key config popup
-  (keyboard shortcut / OBS scene / sound file / empty), general settings
-  screen (2FX timeout, encoder → app/audio-device mapping).
+- GUI: PySide6 (Qt) — clickable visual 4x4 grid (`app.py`, project root).
+  Per-key config popup: layer (1/2) + action type (`keyboard`, `macro`,
+  `obs_scene`, `sound`, `empty`) + value. **`macro` type records a live key
+  combo via `QKeySequenceEdit`** instead of typing it — same execution path
+  as `keyboard` (both end up calling `pyautogui.hotkey`), only the input UX
+  differs. Settings screen: just the 2FX timeout for now (label is in
+  Portuguese: "Tempo de espera da segunda função (segundos)" — deliberate
+  user choice, don't revert to English). Encoder config is a **separate
+  dialog** ("Configure Encoders"), one row per encoder (1-3): a mode
+  dropdown ("Volume Geral" = system / "Aplicativo" = per-app), and an
+  app-picker (native file dialog filtered to `.exe`) that's only enabled in
+  "Aplicativo" mode — writes `target: "system"` or `target: "app:<exe
+  name>"` into config, matching the schema.
 - **Python interpreter: must be a standalone python.org install, NOT
   Anaconda.** Discovered 2026-07-19 — `PySide6` fails to import under
   Anaconda's Python with `ImportError: DLL load failed while importing

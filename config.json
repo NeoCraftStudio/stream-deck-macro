@@ -4,15 +4,37 @@
   },
   "buttons": {
     "0": {
-      "layer1": { "type": "keyboard", "value": "ctrl+c" },
-      "layer2": { "type": "sound", "value": "sounds/applause.mp3" }
+      "layer1": {
+        "type": "macro",
+        "value": "ctrl+c"
+      },
+      "layer2": {
+        "type": "sound",
+        "value": "sounds/applause.mp3"
+      }
     },
     "1": {
-      "layer1": { "type": "obs_scene", "value": "Camera + Game" },
-      "layer2": { "type": "empty" }
+      "layer1": {
+        "type": "macro",
+        "value": "ctrl+v"
+      },
+      "layer2": {
+        "type": "empty"
+      }
+    },
+    "2": {
+      "layer1": {
+        "type": "keyboard",
+        "value": "ctrl+z"
+      },
+      "layer2": {
+        "type": "empty"
+      }
     }
   },
   "encoders": {
-    "1": { "target": "system" }
+    "1": {
+      "target": "system"
+    }
   }
 }
