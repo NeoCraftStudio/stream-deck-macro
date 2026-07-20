@@ -33,8 +33,8 @@ flowchart TD
     P10 --> P11["Phase 11: Per-process mute"]:::done
     P11 --> P12["Phase 12: 2FX state machine"]:::done
     P12 --> P13["Phase 13: GUI (PySide6)"]:::done
-    P13 --> P14["Phase 14: Full integration"]:::current
-    P14 --> P15["Phase 15: Packaging .exe"]:::todo
+    P13 --> P14["Phase 14: Full integration"]:::done
+    P14 --> P15["Phase 15: Packaging .exe"]:::current
     P0 -.-> C["Case: 3D-printed enclosure"]:::todo
     C -.-> P14
 

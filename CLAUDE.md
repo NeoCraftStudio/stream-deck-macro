@@ -191,6 +191,28 @@ Debounce fix for the button matrix (mirrors the encoder's debounce) is now
 `BTN:n:DOWN` events per press. Matrix, encoder, and LEDs all reconfirmed
 working after the reconnection.
 
+## Open decision — hardware-standalone operation (raised 2026-07-20, undecided)
+User asked whether config could live on the hardware itself, app being "just
+the door" to edit it, so the deck works without the PC app running. Honest
+answer given: **partially possible, not fully — inherent limitation, not a
+gap to fix.**
+- **Can never run standalone** (need real OS/network access the Arduino
+  doesn't have): sound playback/VB-Cable routing, OBS scene control,
+  system/per-app volume+mute (`pycaw` needs Windows' own Core Audio API).
+  Same reason Elgato Stream Deck/Loupedeck also require their own PC
+  software running — not unique to this project.
+- **Could move to hardware**: plain keyboard shortcuts only. Pro Micro's
+  ATmega32U4 has native USB and can act as a real USB HID keyboard directly;
+  mappings could be stored in its onboard EEPROM (written via the app over
+  serial), letting those specific actions keep working even with the app
+  fully closed/crashed (not just backgrounded).
+- This is a real architecture change (rewrite firmware as native HID device
+  + design EEPROM storage format) — not something to bolt on casually.
+  **Undecided whether worth it, given the tray-icon fix (2026-07-20) already
+  lets the app run invisibly in the background** — the EEPROM/HID approach
+  only additionally helps if the app process isn't running at all. Revisit
+  and decide in a future session; don't forget this was raised.
+
 ## Open items
 - Physical case layout (researching 3D-printable models).
 - **Two-way serial protocol (PC → firmware LED commands, e.g. `LED:MODE:SOLID:RED`) deliberately deferred** — firmware currently only sends events, doesn't yet parse incoming commands. Must exist before Phase 14 (full integration), since that's how the app will drive LED behavior (including the 2FX indicator).

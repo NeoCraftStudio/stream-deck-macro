@@ -24,8 +24,8 @@ flowchart TD
     P10 --> P11["Phase 11: Per-process mute"]:::done
     P11 --> P12["Phase 12: 2FX state machine"]:::done
     P12 --> P13["Phase 13: GUI (PySide6)"]:::done
-    P13 --> P14["Phase 14: Full integration"]:::current
-    P14 --> P15["Phase 15: Packaging .exe"]:::todo
+    P13 --> P14["Phase 14: Full integration"]:::done
+    P14 --> P15["Phase 15: Packaging .exe"]:::current
     P0 -.-> C["Case: 3D-printed enclosure"]:::todo
     C -.-> P14
 
@@ -53,6 +53,6 @@ flowchart TD
 - [x] Phase 11 — App: real per-process mute (`pycaw`, mute + unmute both confirmed on `opera.exe`)
 - [x] Phase 12 — App: 2FX layer state machine (arm/cancel/timeout/layer-2-fire all confirmed against real hardware)
 - [x] Phase 13 — App: GUI (PySide6) — grid, per-key config popup (incl. recorded-macro type), 2FX timeout settings, and per-encoder config (system vs. per-app via file picker) all confirmed saving to config.json
-- [ ] Phase 14 — Full integration (firmware + app, real hardware) **← current**
-- [ ] Phase 15 — Packaging (PyInstaller .exe)
+- [x] Phase 14 — Full integration: firmware two-way command (`LED:SOLID:r,g,b`) confirmed, app listens to serial live via a `QTimer` (non-blocking, GUI stays responsive) and executes real actions (keyboard/macro, sound, OBS scene) through the 2FX logic. Follow-up polish (not blocking): app doesn't yet send LED feedback on 2FX arm/disarm, encoder events not yet wired to volume/mute.
+- [ ] Phase 15 — Packaging (PyInstaller .exe) **← current**
 - [ ] Case — 3D-printed enclosure (parallel track, not blocking)

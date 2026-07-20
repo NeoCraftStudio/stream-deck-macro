@@ -1,6 +1,15 @@
 {
   "settings": {
-    "2fx_timeout_seconds": 10
+    "2fx_timeout_seconds": 10,
+    "led_brightness": 36,
+    "led_speed_ms": 23,
+    "led_speed_percent": 96,
+    "led_pattern": "rainbow_wave",
+    "led_color": [
+      251,
+      21,
+      255
+    ]
   },
   "buttons": {
     "0": {
@@ -24,8 +33,17 @@
     },
     "2": {
       "layer1": {
-        "type": "keyboard",
-        "value": "ctrl+z"
+        "type": "sound",
+        "value": ""
+      },
+      "layer2": {
+        "type": "empty"
+      }
+    },
+    "3": {
+      "layer1": {
+        "type": "macro",
+        "value": "ctrl+a"
       },
       "layer2": {
         "type": "empty"
