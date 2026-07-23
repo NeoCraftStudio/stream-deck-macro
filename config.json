@@ -4,10 +4,10 @@
     "led_brightness": 36,
     "led_speed_ms": 23,
     "led_speed_percent": 96,
-    "led_pattern": "rainbow_wave",
+    "led_pattern": "solid",
     "led_color": [
-      251,
-      21,
+      236,
+      19,
       255
     ]
   },
