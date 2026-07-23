@@ -69,6 +69,44 @@ teaching over speed.
   or the reel needs replacing before the final 16-LED build.
 - Pinout closed, 18/18 pins used, no spares.
 
+### Case / component decisions (from a separate conversation, folded in 2026-07-21)
+- **Switches**: Outemu, cheapest available, plate-mount (clip into 14mm
+  square holes). Deliberately **not transparent** — lighting comes only from
+  the LED strip/case diffusion, not through the switch itself.
+- **Encoders**: EC11 with a **threaded bushing + nut** (not the bare/glue-mount
+  kind) — this is the confirmed purchased variant. Because of this, the case
+  Lid uses a simple **square anti-rotation recess**, not the earlier printed
+  collar + retainer-clip mechanism (that approach is abandoned).
+- **Keycaps**: DSA profile, PBT, bought in **both gray and white** (50pcs
+  each). Whether this is intentional (e.g. a distinct color for the 2FX
+  layer) or an accidental duplicate order is **unresolved** — don't assume
+  either way, ask before designing around it.
+- **Case screws**: M3 self-tapping, driven directly into printed pilot holes
+  — no nuts or heat-set inserts anywhere except the encoders (which use their
+  own nut for retention).
+- **LED reconfirmed as WS2812B** (addressable), explicitly **not** a cheaper
+  analog RGB strip — needed for the rainbow/per-LED effect, which an analog
+  strip can't physically do. (This reverses an earlier cost-driven
+  recommendation toward analog, from before the rainbow requirement came up.)
+
+### Purchases / BOM (AliExpress, confirmed 2026-07-21)
+Total paid: R$381,23 (coin/loyalty discount excluded from that figure).
+
+| Item | Pack size | Qty bought |
+|---|---|---|
+| 1N4148 diodes | 100/pack | 2 packs (200 total) |
+| Copper wire kit | 5×10m rolls | 1 kit (50m total) |
+| EC11 rotary encoder (bushing+nut) | 5/pack | 2 packs (10 total) |
+| Outemu switch, Brown | 70/pack | 1 pack |
+| Keycap DSA, Gray | 50/pack | 1 pack |
+| Keycap DSA, White | 50/pack | 1 pack |
+| WS2812B LED strip | 2m / 120 LEDs | 1 |
+| Arduino Pro Micro (USB-C) | 1/unit | 4 |
+
+**User bought deliberately more than needed, for spares on future projects —
+don't treat the surplus (diode count, encoder count, 4 Pro Micros, etc.) as a
+mistake or suggest reducing it.**
+
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
   `ENC:2:CW`, `ENC:2:PUSH`). The app decides actions.
@@ -213,8 +251,115 @@ gap to fix.**
   only additionally helps if the app process isn't running at all. Revisit
   and decide in a future session; don't forget this was raised.
 
+## Physical case design (OpenSCAD) — status as of 2026-07-22
+Case design moved into **this** Claude Code session (user said the separate
+claude.ai conversation's case decisions were wrong — case work now happens
+here, in `case/`, not there). Tool: **OpenSCAD** (installed at
+`E:\OpenScad\openscad.exe`, CLI-capable — used to render preview PNGs
+directly via `openscad.exe -o out.png --camera=... --render file.scad`,
+shown inline to the user for iteration, since neither `color()` nor the `%`
+transparency modifier survive OpenSCAD's `--render` PNG export pipeline —
+confirmed by direct testing, not just a hunch. For any future fit-check
+that needs multiple distinguishable objects, the user's own OpenSCAD GUI
+(F5 preview) is the reliable option, not a CLI screenshot.
+
+**Design lineage:**
+- Started from **MisteRdeck** (printables.com/model/134529, CC BY-SA,
+  attribution: MattRigg) as loose visual inspiration only — no files used.
+- User then provided a *different* reference actually downloaded to disk:
+  **"DIY Mechanical Macro Keypad — Ocreeb"**
+  (`D:\Downloads\DIY Mechanical Macro Keypad ― Ocreeb - 5535019\files\`,
+  copied into `case/reference/`: `Case_Top.stl` [88×94×18mm, 4×3 keys + 2
+  encoders], `Case_Bottom.stl` [86.5×92.5×10mm tray], `Knob.stl`). Confirmed
+  with the user this is a **real derivative use** (not just inspiration) —
+  CC BY-SA attribution + share-alike would apply to the case design
+  specifically if it's ever shared/sold (electronics/firmware/app are
+  unaffected).
+- Tried scaling/stretching their actual STL non-uniformly — **don't do
+  this**: it distorts fixed-angle chamfers unevenly. Abandoned in favor of
+  fresh parametric geometry inspired by their style (chamfered corners +
+  beveled top edge + recessed switch deck), which is what all `case_v*`
+  files use now.
+
+**Current real component count (do not confuse with the Ocreeb reference's
+12 keys/2 encoders): 16 positions (4×4 incl. 2FX) + 3 encoders**, matching
+the firmware/app. Layout: switch grid on the **left**, 3 encoders in a
+column on the **right** (user's explicit call, reversing the Ocreeb
+reference's top-mounted 2-encoder layout).
+
+**Files** (in `case/`):
+- `case_params.scad` — shared dimensions (switch pitch/hole, grid size,
+  encoder spacing, margins, corner chamfer, `rim_height`=20mm, bevel,
+  border, deck recess) — both top and bottom `include` this, keep them
+  in sync through here, not by duplicating numbers.
+- `case_v4_top.scad` — **current working file**, top plate. Contains
+  `case_top()` (base: chamfered rim + tapered top bevel + recessed switch
+  deck + 4×4 grid holes + 3 encoder holes, encoder hole `d=7mm` is a
+  **placeholder — must be confirmed with calipers** before final print) and
+  `case_top_split_tilt()` (the active top-level call — see "in-progress"
+  below).
+- `case_v4_bottom.scad` — bottom tray, slides up into the top's inner
+  cavity from below. Has its own perimeter wall (not a flat disc — user
+  explicitly asked for a wall so it slides/guides into the top, not just
+  floats loose). `fit_clearance=0.25mm` per side (needed for FDM printing;
+  an exact-match dimension won't physically slide).
+- `case_v4_assembly.scad` — fit-check helper, `use`s both top and bottom.
+- `case/reference/` — the Ocreeb STLs (unmodified, for visual reference /
+  do-not-redistribute-without-attribution).
+- `case/renders/*.png` — dated iteration screenshots, safe to ignore/delete,
+  not load-bearing.
+
+**Iteration history (what was tried and rejected, so it isn't retried):**
+1. v1-v3: flat plate, various bevel attempts. v2's non-uniform-scaled-STL
+   approach was rejected (see above). v3 fixed a real bug: OpenSCAD's
+   `linear_extrude(scale=...)` scales around the **origin**, not the
+   shape's center — an off-origin polygon bevels unevenly (2 sides get no
+   taper at all) unless you center it before scaling and translate back
+   after. Remember this if any future bevel/taper looks lopsided.
+2. v4: added the recessed switch deck (hollow rim + separate deck slab —
+   user wanted the keys visibly recessed below the outer bezel, matching
+   the Ocreeb reference, not flush). Fixed `encoder_gap` 30→15 (user: too
+   far from the keys). Increased `rim_height` 8→20mm (user: "2cm" walls).
+   Bottom plate had a **real positioning bug**: it used `fit_clearance` as
+   its offset instead of `border + fit_clearance`, so it sat near the
+   outer corner instead of centered in the inner cavity — fixed.
+3. v5 (abandoned): tried a single continuous slope (thin front, tall back)
+   by slicing the whole shell with a rotated cutting plane. **This is
+   wrong for this design** — it sliced straight through the switch deck
+   and removed an entire row of keys, because the front height chosen was
+   below the deck's Z-position. Any future "uniform slope" attempt must
+   either keep front_height above the deck's top, or use the split-tilt
+   approach below instead.
+4. **v6 (current, in-progress, UNVERIFIED)**: user's actual request —
+   left/right rails stay flat/vertical at the full `rim_height` (20mm, no
+   angle at all); the *middle* section (the switch deck + all hole cutting)
+   is tilted so its front (y=0) stays flush with the rails and its back
+   (y=`plate_d`) sits `riser_height`=8mm higher. Implemented via
+   **`multmatrix()` shear** (`case_top_split_tilt()`, current top-level
+   call in `case_v4_top.scad`) — a shear repositions existing geometry
+   instead of cutting into it, avoiding the v5 failure mode. Math was
+   hand-verified but **never visually confirmed** — repeated attempts at
+   finding a CLI camera angle that clearly shows the tilt profile failed
+   (OpenSCAD's camera gimbal convention behaved inconsistently across
+   attempts: same rx value gave a top-down view in one file and a side
+   profile in another — don't trust remembered camera parameters, re-derive
+   per file). **Next step when resuming: get the user to open this file in
+   their own OpenSCAD GUI and confirm the tilt actually looks right — if
+   not, the two things to adjust are `riser_height` and the shear math in
+   `case_top_split_tilt()`.**
+
+**Not yet built:** bottom tray hasn't been revisited since the split-tilt
+change (may need its own wall-height adjustment to still mate correctly
+with a tilted top — not checked yet). No STL has been exported for
+printing yet — everything so far is still in the "getting the shape right"
+iteration phase.
+
 ## Open items
-- Physical case layout (researching 3D-printable models).
+- Physical case layout — see full status above. Components already
+  purchased (see "Purchases / BOM").
+- Whether the gray + white DSA keycap sets (50 each) are intentional (e.g.
+  2FX layer color-coding) or a duplicate order — unresolved, ask before
+  designing keycap layout around it.
 - **Two-way serial protocol (PC → firmware LED commands, e.g. `LED:MODE:SOLID:RED`) deliberately deferred** — firmware currently only sends events, doesn't yet parse incoming commands. Must exist before Phase 14 (full integration), since that's how the app will drive LED behavior (including the 2FX indicator).
 - **Discord audio routing driver decision (bundle vs. paid license vs. manual install) deferred to pre-launch** — see the "Routing sound into Discord" note above.
 
