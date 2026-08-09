@@ -303,6 +303,86 @@ as a one-time authorization for this round, not a standing change — default
 back to guided steps (describe what needs to happen, hand over the exact
 commands, let the user run them) next time unless told otherwise again.
 
+### COM port auto-detection (2026-08-08, v2.2.0 — SUPERSEDED by v3.0.0 below)
+`PORT = "COM5"` was a hardcoded constant — if the board ever enumerated on
+a different COM number (any different USB port/hub, a driver reinstall,
+another PC), the app didn't just show a wrong "disconnected" indicator, it
+genuinely couldn't talk to the pad at all. First fix: match the board's
+**USB VID:PID** (`VID:PID=1B4F:9206`, SparkFun's registered vendor ID for
+this Pro Micro variant — confirmed via `serial.tools.list_ports.comports()`
+on the real board, not guessed) instead of a fixed port number.
+
+**This alone had a real gap, caught by the user**: VID:PID identifies the
+board *model*, not a specific unit — if a second Pro Micro (of the same
+kind) is plugged in at the same time, matching by VID:PID alone can't tell
+them apart and may grab the wrong one. `find_pad_port()`/`connect_serial()`
+from this v2.2.0 pass no longer exist — replaced by the probing state
+machine below. Kept this entry so the "why not just VID:PID" reasoning
+isn't lost, but don't reference `find_pad_port()` — it's gone.
+
+### Device identity handshake (2026-08-08, v3.0.0)
+Full fix for the multi-board gap above: the firmware now answers an
+identity query, and the app only trusts a connection once that's
+confirmed — matches the standard pattern for this exact problem (verified
+against pyserial's own docs/community guidance before implementing, not
+assumed).
+
+**Firmware** (`firmware/stream_deck_macro.ino`): `#define DEVICE_ID
+"ID:NEOCRAFT_MACRO_DESK:v1"` — on receiving the line `ID?`, replies
+`Serial.println(DEVICE_ID)`. The `:v1` suffix is a protocol-version tag,
+separate from `APP_VERSION` — bump it only if the identity/handshake
+scheme itself changes shape later, not on every app release.
+
+**App** (`app.py`): connecting is now a 3-state machine, not one `open()`
+call — `connection_state` is `"disconnected"` / `"probing"` / `"connected"`.
+- `find_candidate_ports()` — same VID:PID scan as before, but returns
+  **all** matches now, not just the first.
+- `start_probe_cycle()` / `try_next_candidate()` — pop one candidate,
+  open it, send `DEVICE_ID_QUERY` (`b"ID?\n"`), set `probe_deadline = now +
+  IDENTIFY_TIMEOUT_S` (3.0s), state → `"probing"`. On timeout with no
+  matching response, close that port and try the next candidate; when the
+  candidate list is exhausted, back to `"disconnected"` (the normal
+  `RECONNECT_INTERVAL_S`-gated retry in `poll_serial` re-scans from
+  scratch next cycle, so a board plugged in later, or one that changes
+  port, still gets found).
+- `confirm_connected(port)` — called the moment a line starting with
+  `DEVICE_ID_RESPONSE_PREFIX` arrives while `"probing"`. State →
+  `"connected"`, calls `on_serial_connected()` **immediately** — no more
+  blind `QTimer.singleShot(2000, ...)` delay guessing when the board's
+  done resetting; the handshake response IS the proof it's alive and
+  processing commands correctly.
+- `send_led_command()` and `send_heartbeat()` are both gated on
+  `connection_state == "connected"` now, not just "the port is open" —
+  deliberate: never send our commands to a candidate that hasn't been
+  identity-confirmed yet, since it might genuinely be a different project
+  on a different board.
+
+**Verified end-to-end, not just "uploaded without error"**: this session's
+own established lesson (uploads to this board are flaky, silence isn't
+proof) applied again — the first several upload attempts failed with the
+usual `butterfly_recv`/`initialization failed` errors, and even after one
+attempt showed no error, no explicit "Done uploading" toast was ever
+caught on screen. Instead of trusting that, verified functionally: ran
+`app.py` from source and confirmed the actual log sequence `Probing COM5
+for device identity...` → `Connected to COM5` — the second line only ever
+prints from `confirm_connected()`, which only runs after a real firmware
+response matched, so this is proof the new firmware genuinely made it onto
+the board. Repeated the same proof-by-function-not-by-toast for the
+packaged exe too: after installing and launching v3.0.0, confirmed a
+second process gets `PermissionError: Access is denied` trying to open
+COM5 — the port is held, meaning the packaged build's handshake logic
+also actually connected.
+
+**Not yet built** (mentioned to the user as future scope, not started):
+if it's ever needed, `p.serial_number` from `list_ports.comports()` was
+checked on the real board and found to be `9&AD4A0DA&0&4` — this is a
+**Windows-synthesized ID based on physical USB port position**, not a
+genuine per-device factory serial (this Pro Micro variant doesn't have
+one). It changes if the same board moves to a different USB port, and
+could collide across different boards plugged into the same port at
+different times — don't use it as a persistent per-device identifier, the
+identity handshake above is the correct mechanism for that.
+
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
   `ENC:2:CW`, `ENC:2:PUSH`). The app decides actions.

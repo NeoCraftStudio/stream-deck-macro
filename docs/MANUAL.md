@@ -77,12 +77,13 @@ layout and flow are identical, only the wording changes per language now.*
 
 The app connects automatically — no setup dialog, no drivers to install
 separately (Windows' built-in USB-serial driver handles the Pro Micro).
+It finds the pad by its USB identity, not a fixed COM port number, so it
+connects correctly no matter which COM port Windows assigns it (which can
+change if you plug it into a different USB port).
 
-**If the LEDs stay solid red after launching the app:** the app looks for
-the pad specifically on **COM5**. If your pad enumerates on a different COM
-port (check Windows Device Manager → Ports (COM & LPT)), it won't connect
-automatically — this is a known current limitation, not a sign anything is
-broken.
+**If the LEDs stay solid red after launching the app:** the app isn't
+seeing the pad at all — check the USB cable/connection, and confirm it
+shows up in Windows Device Manager under Ports (COM & LPT).
 
 **To uninstall:** Start Menu → NeoCraft Macro Desk → "Uninstall NeoCraft
 Macro Desk," or Windows Settings → Apps. Your saved button/encoder

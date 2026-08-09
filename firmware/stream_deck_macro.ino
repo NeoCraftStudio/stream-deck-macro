@@ -1,5 +1,12 @@
 #include <Adafruit_NeoPixel.h>
 
+// Identity string for the "ID?" handshake — app.py matches on this exact
+// string (see DEVICE_ID_RESPONSE in app.py) to confirm it's actually
+// talking to THIS project's firmware, not just any board that shares the
+// same USB VID:PID (which only identifies the Pro Micro model, not the
+// specific device/project running on it).
+#define DEVICE_ID "ID:NEOCRAFT_MACRO_DESK:v1"
+
 // ---- Button matrix ----
 const int rowPins[4] = {3, 4, 5, 6};
 const int colPins[4] = {7, 8, 9, 10};
@@ -154,7 +161,14 @@ void handleSerialCommand() {
   cmd.trim();
   lastHostContact = millis();
 
-  if (cmd.startsWith("LED:MODE:SOLID:")) {
+  if (cmd == "ID?") {
+    // Identity handshake — lets the host tell this board apart from any
+    // other Pro Micro that happens to be plugged in at the same time
+    // (same USB VID:PID, since that only identifies the board MODEL, not
+    // this specific device/project). See DEVICE_ID above.
+    Serial.println(DEVICE_ID);
+
+  } else if (cmd.startsWith("LED:MODE:SOLID:")) {
     int r, g, b;
     sscanf(cmd.c_str() + 15, "%d,%d,%d", &r, &g, &b);
     for (int i = 0; i < NUM_LEDS; i++) {
