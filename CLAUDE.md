@@ -107,6 +107,202 @@ Total paid: R$381,23 (coin/loyalty discount excluded from that figure).
 don't treat the surplus (diode count, encoder count, 4 Pro Micros, etc.) as a
 mistake or suggest reducing it.**
 
+### Firmware source (2026-07-22)
+**`firmware/stream_deck_macro.ino` now exists and is git-tracked.** Until
+this point every firmware version only ever lived pasted into the Arduino
+IDE's own sketch, never saved into the repo — a real gap, since it meant
+firmware had no version history unlike `app.py`/the case files. This file
+holds the last version the user confirmed uploaded and working (matrix +
+encoder debounce, `LED:MODE:SOLID/BREATHE/RAINBOWWAVE/COLORCYCLE` serial
+commands). **Keep this file in sync going forward** — when firmware changes
+get made (in the Arduino IDE, per this project's rule of never touching
+Arduino/C++ teaching but still giving full-file code), also update this
+saved copy so it doesn't drift out of sync with what's actually on the
+board again.
+
+### Disconnect indicator (2026-08-08)
+LEDs go solid red when the app isn't running/connected — a heartbeat/watchdog,
+not DTR. First attempt checked `if (Serial)` directly, relying on Windows'
+USB-CDC driver propagating DTR-low on a clean `pyserial` close — **unreliable
+in practice**, didn't fire on Quit. Replaced with: `app.py` sends `"PING\n"`
+once a second (`heartbeat_timer`, decoupled from anything else); firmware
+tracks `lastHostContact` (updated by *any* line received, not just PING) and
+treats no contact for `HOST_TIMEOUT_MS` (3000ms) as disconnected. Catches
+crashes/hangs too, not just clean closes. **Lesson learned the hard way**:
+an Arduino upload with no visible error banner is *not* proof it succeeded —
+this board's `avr109` bootloader upload is flaky and silently-failed once
+mid-session, leaving stale firmware running while debugging why the "fix"
+wasn't taking effect. Always wait for the explicit "Done uploading." toast,
+not just the absence of a red error.
+
+### Performance pass (2026-08-08)
+App was burning ~14% of one CPU core even sitting idle, traced to
+`AnimatedBorder.paintEvent`: it drew the rainbow border as 150 separate line
+segments at 20fps, every frame, in Python — even in solid-color mode where
+every segment was the same color. Fixed by drawing the border as one
+`QPainterPath` (cached, rebuilt only on resize) stroked with Qt's native
+`QConicalGradient` for the rainbow case, instead of manually computing 150
+`colorsys.hsv_to_rgb` calls per frame. Also split the animation off the 50ms
+input-polling timer into its own 100ms timer that skips entirely when
+`window.isVisible()` is false — idle-in-tray CPU dropped to ~0.5%. Measured
+before/after on the actual packaged exe, not just source.
+
+### Custom icon (2026-08-08)
+`assets/icon.ico` / `icon.png` — a keycap with a lightning bolt, generated
+programmatically via `tools/make_icon.py` (Pillow, not hand-drawn) so the
+design can be regenerated/tweaked by re-running the script. Wired into the
+window title bar, the system tray icon, and the exe itself (PyInstaller
+`--icon`). Bundled read-only assets need `sys._MEIPASS` at runtime, NOT
+`dirname(sys.executable)` like `config.json` — see `bundled_resource_dir()`
+vs `resource_base_dir()` in `app.py`, they resolve differently on purpose.
+
+### Installer (2026-08-08)
+Switched packaging from PyInstaller `--onefile` to `--onedir` — onefile
+self-extracts to a temp folder on *every* launch, which is both slower and a
+known Windows Defender false-positive trigger for PyInstaller apps
+specifically. Wrapped the onedir output in a proper installer built with
+**Inno Setup** (`installer/setup.iss`), installed via `winget install
+JRSoftware.InnoSetup`. Installer targets `{localappdata}\Programs\...`
+(`PrivilegesRequired=lowest`) — **no admin/UAC prompt**, since it's a
+per-user install. Creates a Start Menu shortcut + uninstaller; desktop
+shortcut is an opt-in checkbox. Compile with:
+`"C:\Users\<user>\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\setup.iss`
+— output lands in `dist_installer/` (gitignored, ~51MB, distribute via
+GitHub Releases, not committed to the repo).
+
+This forced a real fix, not just a packaging change: **`config.json` can no
+longer live next to the exe** (an installed app's own folder isn't
+guaranteed writable). It now lives in `%APPDATA%\NeoCraft Macro
+Desk\config.json` always when frozen (`user_data_dir()` in `app.py`) — dev
+runs from source still use the repo-root `config.json` as before. Verified
+end-to-end: silent install (`/VERYSILENT`), launch from the installed path,
+silent uninstall (confirms the install folder is removed but `%APPDATA%`
+config survives), reinstall (confirms real config reloads correctly).
+
+### User manual (2026-08-08)
+`docs/MANUAL.md` (source of truth, viewable on GitHub) + `docs/MANUAL.pdf`
+(generated). Three parts: what it does, how to install, how to use each
+function — screenshots in `docs/images/` captured from the running app via
+`tools/screenshot.ps1` (native window-rect capture, not the AI screenshot
+tool — that one doesn't save files to disk). PDF built via
+`tools/build_manual_pdf.py` (markdown → HTML with images inlined as base64
+→ headless Edge print-to-pdf; needs `--headless=new` specifically, the
+older `--headless` flag ignores `--no-pdf-header-footer` and leaves
+timestamp/URL header-footer junk on every page). Build-time tools
+(`pillow`, `markdown`, `pymupdf`) are in `tools/requirements-tools.txt`,
+deliberately kept out of the real `requirements.txt` since they're not
+`app.py` runtime dependencies. **Regenerate screenshots + PDF whenever the
+UI changes** — same staleness risk as the firmware file, don't let this one
+drift either.
+
+### Language selection — English/Português (2026-08-08, v2.0.0)
+Hand-rolled dict-based i18n (`TR` dict + `tr(key, **kwargs)` in `app.py`),
+not Qt's `.ts`/`.qm` Linguist workflow — the UI text is small and static
+enough that a lookup table is simpler to maintain than a separate
+translation-file toolchain. `config["settings"]["language"]` is `"en"` or
+`"pt"`, default `"pt"` (existing users get Portuguese by default, matching
+what a few labels — the 2FX timeout, the encoder mode dropdown — already
+hardcoded before this). Switch it via Settings (click the `2FX` button in
+the app window) → Language dropdown.
+
+**How live-switching works without an app restart**: every dialog
+(`ConfigDialog`, `SettingsDialog`, `ColorSettingsDialog`,
+`EncoderConfigDialog`) is torn down and rebuilt from scratch each time it's
+opened, so it reads `tr()` fresh and picks up a language change
+automatically. Only 3 widgets are built once at startup and therefore need
+an explicit push after a language change: the "Color Settings" button and
+the tray menu's Open/Quit actions — see `refresh_static_ui()`, called from
+`on_settings_clicked()` right after saving.
+
+**Real refactor forced by this, not just a text swap**: combo boxes that
+used to read `.currentText()` directly as the stored/logic value (action
+type: `keyboard`/`macro`/`obs_scene`/`sound`/`empty`; LED pattern;
+encoder mode) would have broken the moment their *displayed* text became
+translatable. All of them now use `addItem(display, value)` +
+`.currentData()` for the stored value, decoupled from what's shown —
+`layer_box` already did this before, the pattern's just applied
+consistently now. Button grid labels (`BTN0`, `2FX`, `ENC1`) and the brand
+name are deliberately **not** translated — they're short device-reference
+codes, not sentences.
+
+**Not translated (accepted gap, not an oversight)**: `QDialogButtonBox`'s
+OK/Cancel buttons stay in Qt's default English — translating them needs a
+`QTranslator` with Qt's own bundled locale files, which isn't confirmed to
+survive PyInstaller packaging; not worth the risk for two words on every
+dialog. The installer wizard itself also offers a language choice now
+(`[Languages]` in `installer/setup.iss` — English + `BrazilianPortuguese.isl`,
+bundled with Inno Setup), but the one "Create a desktop shortcut" task
+description inside it is still English-only (Inno Setup's `[Tasks]`
+descriptions aren't auto-translated by `MessagesFile`).
+
+**Verification**: GUI click-through wasn't reliably possible this session
+(computer-use access kept getting stuck attributing clicks to a read-tier
+browser that was visually behind the app window — an environment quirk,
+not an app bug). Verified instead via a headless smoke test that imports
+`app.py` with `QApplication.exec` monkeypatched to a no-op, instantiates
+every dialog under both `language` values, and asserts every label/item
+text — stronger coverage than a manual click-through since it touches every
+string, not just what's convenient to click. Script isn't checked in
+(one-off, lives in the session's scratch dir) — rewrite it if this needs
+re-verifying later, the pattern is straightforward.
+
+Version bumped to **2.0.0** (`installer/setup.iss`) for this release —
+same `AppId`, so the installer upgrades an existing install in place
+rather than creating a duplicate entry.
+
+### Bottom button row split into 3 (2026-08-08, v2.1.0)
+Was one "Color Settings" button; now `color_settings_button` /
+`settings_button` / `help_button` side by side in a `QHBoxLayout`
+(`bottom_row`). `APP_VERSION` constant added to `app.py` (currently
+`"2.1.0"`) — **kept in sync with `MyAppVersion` in `installer/setup.iss`
+by hand, not read from there automatically**; bump both together.
+
+- **Settings** now opens `SettingsDialog` directly (2FX timeout + language)
+  — same dialog as before, just reachable from an obvious button instead of
+  the undiscoverable "click the 2FX tile in the app window" shortcut that
+  used to live at `on_button_clicked(15)`. That special-case was removed;
+  clicking the 2FX tile is now a genuine no-op (it was never a mappable
+  button — no layer/action exists for it — the settings shortcut there was
+  always a workaround, not a real feature).
+- **Help** opens a new `HelpDialog`: app name, `APP_VERSION`, and two
+  clickable links (`QLabel` with HTML `<a href>` + `setOpenExternalLinks
+  (True)`, no `QDesktopServices` needed) — one to the manual on GitHub
+  (`MANUAL_URLS[language]`, see next section), one to the repo itself
+  (`REPO_URL`). Constants near `APP_NAME`, assume the `master` branch.
+- `refresh_static_ui()` extended to also push new text into
+  `settings_button`/`help_button` on a language change, alongside the
+  existing `color_settings_button`/tray actions.
+
+Verified the same way as the language feature — headless smoke test
+(dialogs instantiated directly, `QApplication.exec` stubbed out), not a
+live click-through; same Opera-frontmost environment quirk blocked
+computer-use all session (this time the user was actively watching a
+Twitch stream in it, so forcing focus away would've been actively
+disruptive, not just inconvenient — didn't attempt it).
+
+### Portuguese manual + language-aware Help link (2026-08-08, v2.1.1)
+`docs/MANUAL_PT.md` / `MANUAL_PT.pdf` — full Portuguese translation of the
+manual, terminology matched to the app's own `TR` dict (Camada, Tipo de
+ação, Configurações de Cor, etc.), not translated loosely. `HelpDialog`'s
+manual link now picks the right one for the current UI language:
+`MANUAL_URLS = {"en": .../MANUAL.md, "pt": .../MANUAL_PT.md}` replaced the
+old single `MANUAL_URL` constant.
+
+`tools/build_manual_pdf.py` generalized to take a source filename
+(`python tools/build_manual_pdf.py MANUAL_PT.md`) instead of being
+hardcoded to `MANUAL.md` — with no args it builds both
+(`DEFAULT_SOURCES = ["MANUAL.md", "MANUAL_PT.md"]`). Same
+markdown-with-inlined-images → headless-Edge-print-to-pdf pipeline as
+before, just parameterized.
+
+**Git note**: this round is the one exception to "never run git
+automatically" in this file — the user explicitly said "commit everything"
+and was asked directly whether that meant deviating from the standing
+guided-steps workflow for this one request; they confirmed yes. Treat this
+as a one-time authorization for this round, not a standing change — default
+back to guided steps (describe what needs to happen, hand over the exact
+commands, let the user run them) next time unless told otherwise again.
+
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
   `ENC:2:CW`, `ENC:2:PUSH`). The app decides actions.
