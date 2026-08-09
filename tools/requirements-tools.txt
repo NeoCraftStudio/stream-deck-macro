@@ -1,0 +1,7 @@
+# Build-time-only tools — NOT runtime dependencies of app.py.
+# Install into .venv only when regenerating the icon or the manual PDF:
+#   pip install -r tools/requirements-tools.txt
+pillow
+markdown
+pymupdf
+pyinstaller

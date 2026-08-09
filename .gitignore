@@ -8,7 +8,13 @@ __pycache__/
 venv/
 build/
 dist/
+dist_installer/
 *.spec
+
+# Personal runtime config — this is data, not source. The app itself
+# stores the real one in %APPDATA%\NeoCraft Macro Desk\config.json when
+# installed; this file only exists locally during dev-mode runs.
+config.json
 
 # Arduino / PlatformIO
 .pio/
