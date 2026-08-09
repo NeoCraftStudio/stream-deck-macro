@@ -5,6 +5,7 @@ import json
 import math
 import colorsys
 import serial
+import serial.tools.list_ports
 import sounddevice as sd
 import soundfile as sf
 import pyautogui
@@ -24,7 +25,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "2.1.1"
+APP_VERSION = "3.0.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -68,7 +69,13 @@ def user_data_dir():
 BASE_DIR = resource_base_dir()
 ICON_PATH = os.path.join(bundled_resource_dir(), "assets", "icon.ico")
 CONFIG_PATH = os.path.join(user_data_dir(), "config.json")
-PORT = "COM5"
+# SparkFun Pro Micro's USB VID:PID — used to find the pad's COM port
+# automatically instead of assuming a fixed port number, since Windows
+# assigns COM numbers per USB physical port, not per device: the same
+# board shows up as a different COM# depending which port/hub it's
+# plugged into.
+PAD_VID = 0x1B4F
+PAD_PID = 0x9206
 BAUD = 9600
 VOLUME_STEP = 0.05
 
@@ -394,7 +401,10 @@ def flash_encoder(enc_id):
 
 
 def send_led_command(cmd):
-    if ser is None or not ser.is_open:
+    # Gated on "connected" (not just "port is open") so LED commands never
+    # go out to a candidate port still mid-identity-handshake — that port
+    # might turn out to be a completely different device.
+    if connection_state != "connected" or ser is None or not ser.is_open:
         return
     try:
         ser.write((cmd + "\n").encode())
@@ -601,33 +611,77 @@ class ColorWheel(QWidget):
 
 
 # ---- Serial handling ----
+# Connecting is a 3-state machine, not a single open() call — VID:PID only
+# identifies the Pro Micro MODEL, not this specific project, so if more
+# than one matching board is plugged in at once we can't just grab the
+# first one found. Each candidate port gets probed with an identity
+# handshake ("ID?" -> firmware replies "ID:NEOCRAFT_MACRO_DESK:...") and
+# is only treated as "connected" once that's confirmed — see DEVICE_ID in
+# the firmware.
+#   disconnected -> (found candidates) -> probing -> (ID confirmed) -> connected
+#                                              |-> (timeout/rejected) -> next candidate, or back to disconnected
 ser = None
 serial_buffer = ""
+connection_state = "disconnected"  # "disconnected" | "probing" | "connected"
+probe_candidates = []
+probe_deadline = 0.0
 last_reconnect_attempt = 0.0
 RECONNECT_INTERVAL_S = 2.0
+IDENTIFY_TIMEOUT_S = 3.0
+DEVICE_ID_QUERY = b"ID?\n"
+DEVICE_ID_RESPONSE_PREFIX = "ID:NEOCRAFT_MACRO_DESK"
 
 
 def on_serial_connected():
-    # Arduino resets when the port opens; give it a moment before writing.
-    if ser is None or not ser.is_open:
-        return
+    # Called only once the identity handshake actually confirms the board
+    # is alive and processing commands — no more guessing at a reset delay.
     send_led_command(f"LED:BRIGHTNESS:{config['settings']['led_brightness']}")
     send_led_command(f"LED:SPEED:{percent_to_ms(config['settings']['led_speed_percent'])}")
     apply_idle_led_pattern()
 
 
-def connect_serial():
-    global ser, serial_buffer
-    try:
-        ser = serial.Serial(PORT, BAUD, timeout=0)
+def find_candidate_ports():
+    return sorted(
+        p.device for p in serial.tools.list_ports.comports()
+        if p.vid == PAD_VID and p.pid == PAD_PID
+    )
+
+
+def start_probe_cycle():
+    global probe_candidates
+    probe_candidates = find_candidate_ports()
+    try_next_candidate()
+
+
+def try_next_candidate():
+    global ser, serial_buffer, connection_state, probe_deadline
+    while probe_candidates:
+        port = probe_candidates.pop(0)
+        try:
+            ser = serial.Serial(port, BAUD, timeout=0)
+        except serial.SerialException:
+            continue
         serial_buffer = ""
-        print(f"Connected to {PORT}")
-        QTimer.singleShot(2000, on_serial_connected)
-    except serial.SerialException:
-        ser = None
+        connection_state = "probing"
+        probe_deadline = time.time() + IDENTIFY_TIMEOUT_S
+        try:
+            ser.write(DEVICE_ID_QUERY)
+        except (serial.SerialException, OSError):
+            pass
+        print(f"Probing {port} for device identity...")
+        return
+    ser = None
+    connection_state = "disconnected"
 
 
-connect_serial()
+def confirm_connected(port):
+    global connection_state
+    connection_state = "connected"
+    print(f"Connected to {port}")
+    on_serial_connected()
+
+
+start_probe_cycle()
 
 
 def handle_serial_line(line):
@@ -660,18 +714,18 @@ def handle_serial_line(line):
 
 
 def poll_serial():
-    global serial_buffer, ser, last_reconnect_attempt
+    global serial_buffer, ser, last_reconnect_attempt, connection_state
     was_armed = two_fx_state.armed
     two_fx_state.check_timeout()
     if two_fx_state.armed != was_armed:
         set_2fx_override(two_fx_state.armed)
         update_all_button_styles()
 
-    if ser is None:
+    if connection_state == "disconnected":
         now = time.time()
         if now - last_reconnect_attempt >= RECONNECT_INTERVAL_S:
             last_reconnect_attempt = now
-            connect_serial()
+            start_probe_cycle()
         return
 
     try:
@@ -681,7 +735,13 @@ def poll_serial():
             while "\n" in serial_buffer:
                 line, serial_buffer = serial_buffer.split("\n", 1)
                 line = line.strip()
-                if line:
+                if not line:
+                    continue
+                if connection_state == "probing":
+                    if line.startswith(DEVICE_ID_RESPONSE_PREFIX):
+                        confirm_connected(ser.port)
+                    # else: unexpected line from a non-matching device — ignore, keep waiting for the deadline
+                else:
                     handle_serial_line(line)
     except (serial.SerialException, OSError):
         print("Serial connection lost, will retry")
@@ -690,6 +750,16 @@ def poll_serial():
         except Exception:
             pass
         ser = None
+        connection_state = "disconnected"
+        return
+
+    if connection_state == "probing" and time.time() > probe_deadline:
+        print(f"No identity response from {ser.port}, trying next candidate")
+        try:
+            ser.close()
+        except Exception:
+            pass
+        try_next_candidate()
 
 
 # ---- Dialogs ----
@@ -1336,7 +1406,9 @@ def send_heartbeat():
     # Firmware's disconnect watchdog needs a line at least once every 3s
     # (HOST_TIMEOUT_MS) or it shows solid red. Any command line resets that
     # timer on the firmware side, so idle periods need this dedicated ping.
-    if ser is not None and ser.is_open:
+    # Only once actually confirmed connected — no point pinging a candidate
+    # port still mid-handshake.
+    if connection_state == "connected" and ser is not None and ser.is_open:
         try:
             ser.write(b"PING\n")
         except (serial.SerialException, OSError):

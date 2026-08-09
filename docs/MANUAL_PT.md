@@ -85,13 +85,15 @@ agora.*
 
 O aplicativo conecta automaticamente — sem tela de configuração, sem
 drivers para instalar separadamente (o driver USB-serial embutido do
-Windows já cuida do Pro Micro).
+Windows já cuida do Pro Micro). Ele encontra o pad pela identidade USB
+dele, não por um número fixo de porta COM, então conecta corretamente
+não importa em qual porta COM o Windows o coloque (o que pode mudar se
+você plugar em uma porta USB diferente).
 
 **Se os LEDs ficarem vermelho sólido depois de abrir o app:** o aplicativo
-procura o pad especificamente na porta **COM5**. Se o seu pad aparecer em
-uma porta COM diferente (confira no Gerenciador de Dispositivos do Windows
-→ Portas (COM & LPT)), ele não vai conectar automaticamente — essa é uma
-limitação atual conhecida, não um sinal de que algo está quebrado.
+não está enxergando o pad de jeito nenhum — confira o cabo/conexão USB, e
+confirme que ele aparece no Gerenciador de Dispositivos do Windows, em
+Portas (COM & LPT).
 
 **Para desinstalar:** Menu Iniciar → NeoCraft Macro Desk → "Uninstall
 NeoCraft Macro Desk", ou Configurações do Windows → Aplicativos. Sua
