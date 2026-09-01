@@ -16,6 +16,11 @@ dist_installer/
 # installed; this file only exists locally during dev-mode runs.
 config.json
 
+# Runtime log written by the app (dev-mode runs land here;
+# the installed app writes it next to config.json in %APPDATA%)
+app.log
+app.log.old
+
 # Arduino / PlatformIO
 .pio/
 *.hex

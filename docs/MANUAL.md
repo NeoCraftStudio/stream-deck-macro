@@ -57,10 +57,10 @@ active. Use the tray icon's **Quit** option to fully exit.
 ### Language
 The app is available in **English** and **Português**, switchable at any
 time from Settings (see [Changing the app language](#changing-the-app-language)).
-Defaults to Português. *Note: the screenshots in this manual were captured
-before this feature existed, so a few labels shown (dialog titles, button
-text) are in whichever language they defaulted to at the time — the dialog
-layout and flow are identical, only the wording changes per language now.*
+Defaults to Português. *Note: some of the smaller dialog screenshots in this
+manual were captured before the language feature existed, so a few labels in
+them may appear in the other language — the layout and flow are identical,
+only the wording changes.*
 
 ---
 
@@ -99,13 +99,12 @@ to remove it manually too.
 
 ![Main window](images/main_window.png)
 
-*Note: this screenshot predates a small layout change — the single bottom
-button is now three side by side: **Color Settings**, **Settings**, and
-**Help** (see below).*
-
-A 4×4 grid of buttons plus the 3 encoders on the right. The animated border
-shows the pad's current LED pattern live. Click **any button** to configure
-it. Below the grid, three buttons:
+A 4×4 grid of buttons plus the 3 encoders on the right. **Each key shows
+what it does** — its assigned shortcut or sound, with a `2FX▸` line for its
+second-layer action — and assigned keys are shown in green, so you can see
+your whole setup at a glance. The animated border shows the pad's current
+LED pattern live. Click **any button** to configure it. Below the grid,
+three buttons:
 - **Color Settings** — change the LED pattern (see
   [Changing the LED pattern](#changing-the-led-pattern)).
 - **Settings** — 2FX timeout and app language (see
@@ -163,7 +162,15 @@ action.
 To change how long Layer 2 stays armed before auto-canceling, click the
 **Settings** button below the grid:
 
-![Settings dialog](images/config_2fx_timeout.png)
+![Settings dialog](images/config_settings.png)
+
+### Changing the 2FX indicator brightness
+
+While Layer 2 is armed, the pad's LEDs pulse red. The **2FX indicator
+brightness** slider in **Settings** controls how bright that pulse is,
+independently of your normal LED brightness — set it higher than normal to
+make the armed state stand out, or lower to keep it subtle. The normal
+brightness is restored automatically the moment Layer 2 disarms.
 
 ### Changing the app language
 

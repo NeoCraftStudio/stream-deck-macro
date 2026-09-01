@@ -1,5 +1,37 @@
 import os
 import sys
+import ctypes
+
+# ---- Single-instance guard ----
+# Must run before anything else touches the serial port or config file — a
+# second launch (double-click twice, Start Menu re-launched while already
+# in the tray, or the dev-mode "python app.py" duplicate-process quirk)
+# would otherwise open its own connection to the pad and hold its own
+# stale copy of config.json in memory, which is exactly what caused the
+# "meu save sumiu" confusion this was built to prevent: two live
+# instances, two different in-memory configs, no way to tell which one a
+# saved change actually went to. A Windows named mutex is the standard,
+# OS-cleaned-up-on-crash way to enforce this — no stale-lock risk even if
+# the app is killed forcefully instead of exiting normally.
+# ctypes.windll.kernel32.GetLastError() is unreliable here — ctypes' own
+# internal argument marshaling can issue further Win32 calls between the
+# CreateMutexW call and reading the error code, clobbering it before we
+# see it. The documented-correct pattern is a DLL handle opened with
+# use_last_error=True, read back via ctypes.get_last_error() (not the
+# GetLastError() API call directly).
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_ERROR_ALREADY_EXISTS = 183
+_single_instance_mutex = _kernel32.CreateMutexW(None, False, "NeoCraftMacroDesk_SingleInstance")
+if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
+    ctypes.windll.user32.MessageBoxW(
+        None,
+        "NeoCraft Macro Desk já está em execução — veja o ícone na bandeja do sistema.\n\n"
+        "NeoCraft Macro Desk is already running — check your system tray icon.",
+        "NeoCraft Macro Desk",
+        0x40,  # MB_ICONINFORMATION
+    )
+    sys.exit(0)
+
 import time
 import json
 import math
@@ -25,7 +57,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.3.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -87,23 +119,84 @@ DEFAULT_CONFIG = {
         "led_pattern": "rainbow_wave",
         "led_color": [255, 0, 0],
         "language": "pt",
+        "fx2_brightness": 50,
     },
     "buttons": {},
     "encoders": {},
 }
 
-if not os.path.exists(CONFIG_PATH):
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(DEFAULT_CONFIG, f, indent=2)
+LOG_PATH = os.path.join(user_data_dir(), "app.log")
 
-with open(CONFIG_PATH, "r") as f:
-    config = json.load(f)
+
+def log(msg):
+    # The app ships as a --windowed build, which means stdout/stderr go
+    # nowhere: every print() is silently discarded once packaged. That made
+    # every field problem ("my config vanished") undiagnosable without
+    # rebuilding an instrumented copy first. This writes a real log next to
+    # config.json so the app can explain itself after the fact.
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    print(line)
+    try:
+        if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 1_000_000:
+            os.replace(LOG_PATH, LOG_PATH + ".old")  # keep one previous run's worth
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass  # logging must never be the thing that breaks the app
+
+
+def warn_user(message):
+    ctypes.windll.user32.MessageBoxW(None, message, APP_NAME, 0x30)  # MB_ICONWARNING
+
+
+def load_config():
+    # Never silently start from defaults when a config file is present but
+    # unreadable — that's how real data gets destroyed: the app comes up
+    # "clean", the user reconfigures (or any later save fires), and the
+    # original mappings are overwritten for good. A damaged file is moved
+    # aside and reported instead, so it can still be recovered by hand.
+    if not os.path.exists(CONFIG_PATH):
+        log(f"config.json não existe em {CONFIG_PATH} — criando com os padrões")
+        return json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        if not isinstance(loaded, dict) or "buttons" not in loaded:
+            raise ValueError("estrutura inesperada no config.json")
+        return loaded
+    except Exception as e:
+        backup = CONFIG_PATH + time.strftime(".corrompido-%Y%m%d-%H%M%S")
+        try:
+            os.replace(CONFIG_PATH, backup)
+        except Exception:
+            backup = "(não foi possível mover o arquivo)"
+        log(f"ERRO ao ler config.json: {type(e).__name__}: {e} | backup: {backup}")
+        warn_user(
+            "Não foi possível ler suas configurações — o arquivo parece danificado.\n\n"
+            f"Ele foi preservado em:\n{backup}\n\n"
+            "O aplicativo abriu com as configurações padrão."
+        )
+        return json.loads(json.dumps(DEFAULT_CONFIG))
+
+
+config = load_config()
 
 config["settings"].setdefault("led_brightness", 50)
 config["settings"].setdefault("led_speed_percent", 50)
 config["settings"].setdefault("led_pattern", "rainbow_wave")
 config["settings"].setdefault("led_color", [255, 0, 0])
 config["settings"].setdefault("language", "pt")
+# Defaults to the normal brightness so nothing changes visually for an
+# existing config until the user actually moves the new slider — until now
+# the 2FX indicator simply inherited whatever led_brightness was set.
+config["settings"].setdefault("fx2_brightness", config["settings"]["led_brightness"])
+
+log(
+    f"=== {APP_NAME} v{APP_VERSION} iniciado | pid={os.getpid()} | "
+    f"config={CONFIG_PATH} | {len(config.get('buttons', {}))} botões, "
+    f"{len(config.get('encoders', {}))} encoders, padrão LED="
+    f"{config['settings'].get('led_pattern')} ==="
+)
 
 
 # ---- Translations ----
@@ -142,6 +235,10 @@ TR = {
         "pt": "Tempo de espera da segunda função (segundos):",
     },
     "language_label": {"en": "Language:", "pt": "Idioma:"},
+    "fx2_brightness_label": {
+        "en": "2FX indicator brightness:",
+        "pt": "Brilho do indicador 2FX:",
+    },
     "color_settings_title": {"en": "Color Settings", "pt": "Configurações de Cor"},
     "pattern_label": {"en": "Pattern:", "pt": "Padrão:"},
     "pattern_solid": {"en": "Solid Color", "pt": "Cor Sólida"},
@@ -183,8 +280,34 @@ def tr(key, **kwargs):
 
 
 def save_config():
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
+    # Atomic: write a temp file, flush it all the way to disk, then swap it
+    # into place with os.replace (a single atomic operation on Windows).
+    # The old code opened the real file with "w", which truncates it to zero
+    # bytes *before* writing — so a crash, a kill, or a power cut at the
+    # wrong moment left an empty or half-written config behind, destroying
+    # every mapping. This way the real file is only ever replaced by a
+    # complete, fully-written one.
+    tmp = CONFIG_PATH + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, CONFIG_PATH)
+        log(f"config salva ({len(config.get('buttons', {}))} botões)")
+    except Exception as e:
+        # A failed save is silent data loss — the user thinks it saved and
+        # only finds out on the next launch. Say so immediately instead.
+        log(f"ERRO ao salvar config: {type(e).__name__}: {e}")
+        warn_user(
+            f"Não foi possível salvar suas configurações em:\n{CONFIG_PATH}\n\n"
+            f"Erro: {type(e).__name__}: {e}\n\n"
+            "Suas alterações NÃO foram gravadas."
+        )
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
 
 
 def percent_to_ms(percent):
@@ -375,13 +498,72 @@ button_pressed = {i: False for i in range(16)}
 current_led_mode = config["settings"]["led_pattern"]
 
 
+def _shorten(text, limit=14):
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def action_summary(action):
+    # Short, human-readable version of a saved action, for the button face.
+    if not action:
+        return ""
+    action_type = action.get("type", "empty")
+    value = action.get("value") or ""
+    if action_type == "empty":
+        return ""
+    if action_type in ("keyboard", "macro"):
+        return _shorten("+".join(p.capitalize() for p in value.split("+"))) if value else ""
+    if action_type == "sound":
+        return _shorten(os.path.basename(value)) if value else tr("action_type_sound")
+    if action_type == "obs_scene":
+        return _shorten(value) if value else tr("action_type_obs_scene")
+    return _shorten(tr(f"action_type_{action_type}"))
+
+
+def button_config(idx):
+    return config.get("buttons", {}).get(str(idx), {})
+
+
+def is_configured(idx):
+    saved = button_config(idx)
+    return any(
+        (saved.get(layer) or {}).get("type", "empty") != "empty"
+        for layer in ("layer1", "layer2")
+    )
+
+
+def button_label(idx):
+    # The grid used to show a bare "BTN0".."BTN14" no matter what was
+    # assigned, so a fully-configured pad looked identical to an empty one —
+    # which is exactly why a working config kept reading as "everything I
+    # set up is gone". The face now shows what each key actually does.
+    if idx == 15:
+        return "2FX"
+    saved = button_config(idx)
+    lines = [f"BTN{idx}"]
+    layer1 = action_summary(saved.get("layer1"))
+    layer2 = action_summary(saved.get("layer2"))
+    if layer1:
+        lines.append(layer1)
+    if layer2:
+        lines.append(f"2FX▸{layer2}")
+    return "\n".join(lines)
+
+
 def update_button_style(idx):
-    parts = []
+    parts = ["font-size: 10px;"]
+    if idx != 15 and is_configured(idx):
+        parts.append("color: #7ee787;")  # assigned keys read green at a glance
     if button_pressed.get(idx):
         parts.append("background-color: gray;")
     if two_fx_state.armed and idx != 15:
         parts.append("border: 3px solid red;")
     button_widgets[idx].setStyleSheet(" ".join(parts))
+
+
+def refresh_button_labels():
+    for idx, widget in button_widgets.items():
+        widget.setText(button_label(idx))
+        update_button_style(idx)
 
 
 def update_all_button_styles():
@@ -428,9 +610,16 @@ def apply_idle_led_pattern():
 
 
 def set_2fx_override(armed):
+    # Brightness is sent BEFORE the mode command on purpose: the firmware's
+    # setBrightness() rescales the pixel buffer that's already loaded, so
+    # changing it after a colour has been written would re-scale existing
+    # values and lose precision. Setting it first means the next command
+    # writes fresh pixels at the new brightness.
     if armed:
+        send_led_command(f"LED:BRIGHTNESS:{config['settings']['fx2_brightness']}")
         send_led_command("LED:MODE:BREATHE:255,0,0")
     else:
+        send_led_command(f"LED:BRIGHTNESS:{config['settings']['led_brightness']}")
         apply_idle_led_pattern()
 
 
@@ -668,7 +857,7 @@ def try_next_candidate():
             ser.write(DEVICE_ID_QUERY)
         except (serial.SerialException, OSError):
             pass
-        print(f"Probing {port} for device identity...")
+        log(f"procurando o pad em {port} (handshake de identidade)...")
         return
     ser = None
     connection_state = "disconnected"
@@ -677,7 +866,7 @@ def try_next_candidate():
 def confirm_connected(port):
     global connection_state
     connection_state = "connected"
-    print(f"Connected to {port}")
+    log(f"CONECTADO em {port}")
     on_serial_connected()
 
 
@@ -744,7 +933,7 @@ def poll_serial():
                 else:
                     handle_serial_line(line)
     except (serial.SerialException, OSError):
-        print("Serial connection lost, will retry")
+        log("conexão serial perdida, vai tentar de novo")
         try:
             ser.close()
         except Exception:
@@ -754,7 +943,7 @@ def poll_serial():
         return
 
     if connection_state == "probing" and time.time() > probe_deadline:
-        print(f"No identity response from {ser.port}, trying next candidate")
+        log(f"sem resposta de identidade em {ser.port}, tentando a próxima porta")
         try:
             ser.close()
         except Exception:
@@ -1047,6 +1236,18 @@ class SettingsDialog(QDialog):
         current_lang = config["settings"].get("language", "pt")
         self.language_box.setCurrentIndex(self.language_box.findData(current_lang))
 
+        # Same 10-150 range as the LED brightness slider in Color Settings, so
+        # the two are directly comparable — set this higher than the normal
+        # brightness to make the armed-2FX flash stand out, or lower to keep
+        # it subtle.
+        self.fx2_brightness_slider = QSlider(Qt.Horizontal)
+        self.fx2_brightness_slider.setRange(10, 150)
+        self.fx2_brightness_slider.setValue(config["settings"]["fx2_brightness"])
+        self.fx2_brightness_label = QLabel(str(self.fx2_brightness_slider.value()))
+        self.fx2_brightness_slider.valueChanged.connect(
+            lambda v: self.fx2_brightness_label.setText(str(v))
+        )
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -1054,6 +1255,13 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout()
         layout.addWidget(QLabel(tr("fx2_timeout_label")))
         layout.addWidget(self.timeout_spin)
+
+        layout.addWidget(QLabel(tr("fx2_brightness_label")))
+        fx2_row = QHBoxLayout()
+        fx2_row.addWidget(self.fx2_brightness_slider)
+        fx2_row.addWidget(self.fx2_brightness_label)
+        layout.addLayout(fx2_row)
+
         layout.addWidget(QLabel(tr("language_label")))
         layout.addWidget(self.language_box)
         layout.addWidget(buttons)
@@ -1240,6 +1448,7 @@ def on_button_clicked(idx):
             action.update(dialog.get_sound_extra())
         config["buttons"][btn_key][layer] = action
         save_config()
+        refresh_button_labels()
         print(f"Saved BTN{idx} [{layer}] = type={action_type}, value={value}")
     else:
         print(f"BTN{idx} config cancelled")
@@ -1251,6 +1460,7 @@ def on_settings_clicked():
         config["settings"]["2fx_timeout_seconds"] = dialog.timeout_spin.value()
         two_fx_state.timeout_seconds = dialog.timeout_spin.value()
         config["settings"]["language"] = dialog.language_box.currentData()
+        config["settings"]["fx2_brightness"] = dialog.fx2_brightness_slider.value()
         save_config()
         refresh_static_ui()
         print("Settings saved")
@@ -1338,12 +1548,13 @@ grid = QGridLayout()
 for row in range(4):
     for col in range(4):
         idx = row * 4 + col
-        label = "2FX" if idx == 15 else f"BTN{idx}"
-        button = QPushButton(label)
+        button = QPushButton(button_label(idx))
         button.setMinimumSize(80, 80)
         button.clicked.connect(lambda checked=False, i=idx: on_button_clicked(i))
         grid.addWidget(button, row, col)
         button_widgets[idx] = button
+
+refresh_button_labels()  # paints the "assigned" accent on top of the labels
 
 content_row.addLayout(grid)
 content_row.addSpacing(40)
@@ -1447,6 +1658,7 @@ def refresh_static_ui():
     help_button.setText(tr("help_button"))
     open_action.setText(tr("tray_open"))
     quit_action.setText(tr("tray_quit"))
+    refresh_button_labels()
 
 window.show()
 sys.exit(app.exec())

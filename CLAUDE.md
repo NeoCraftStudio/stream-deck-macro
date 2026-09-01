@@ -37,6 +37,15 @@ teaching over speed.
   2026-07-19) — when Python code changes, paste the full, current contents
   of the file being edited, not just the changed piece. Applies to all code
   files in this project from here on.
+- **The repo is public and must contain only what the project needs** —
+  no personal data, ever (requested 2026-09-01). Specifically: `config.json`
+  is the user's own runtime data and stays gitignored; documentation
+  screenshots must be rendered from a **neutral demo config** (see
+  `show_main_demo.py` pattern — instantiate the window, swap `app.config`
+  for sample values, then capture), never from the real one, which contains
+  personal sound-file names and paths; `tests/obs_secrets.json` holds a real
+  password and must never be committed (verified: it never has been). Check
+  any new screenshot or example for personal content before committing it.
 - **No teaching for Arduino/C++ firmware code** (requested 2026-07-19) — the
   user does not want to learn Arduino/C++, only Git, GitHub, and Python (the
   original scope). For firmware work: just give the code and the steps, no
@@ -382,6 +391,111 @@ one). It changes if the same board moves to a different USB port, and
 could collide across different boards plugged into the same port at
 different times — don't use it as a persistent per-device identifier, the
 identity handshake above is the correct mechanism for that.
+
+### Single-instance guard (2026-08-09, v3.1.0)
+**Real bug, reported by the user and reproduced**: after a reboot, the user
+found the app showing an old config — turned out to be a stale, long-running
+instance holding an outdated in-memory copy of `config.json` (the app only
+reads the file once, at startup — it never watches for external changes).
+Root cause traced to something already half-documented in this file: the
+"two duplicate python.exe processes" quirk from dev-mode `python app.py`
+launches. Fix: a Windows named mutex (`NeoCraftMacroDesk_SingleInstance`)
+at the very top of `app.py`, before any other import — a second launch
+gets `MessageBoxW`'d and exits immediately via `sys.exit(0)`, before ever
+touching the serial port or `config.json`.
+
+**Implementation gotcha, worth remembering**: `ctypes.windll.kernel32.
+GetLastError()` is NOT reliable for reading a Win32 call's error code —
+ctypes' own internal argument marshaling can issue further Win32 calls
+between your function call and reading the error, clobbering it. Confirmed
+this the hard way (first version silently failed to detect the conflict).
+Correct pattern: `_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)`,
+then `ctypes.get_last_error()` (not the raw `GetLastError()` API call) —
+this is documented ctypes behavior, not a workaround.
+
+**A second, purely investigative false alarm along the way, worth
+remembering so it isn't repeated**: after the fix, testing looked like it
+had failed — two processes, both reporting a window titled "NeoCraft Macro
+Desk" via `Get-Process`. It hadn't failed. `MessageBoxW`'s caption was set
+to the same string (`"NeoCraft Macro Desk"`) as the real app window's
+title — **`Get-Process`'s `MainWindowTitle` can't tell a modal dialog from
+the real app window if they share the same caption text.** Resolved by
+comparing actual window dimensions via `GetWindowRect` (P/Invoke) — the
+real window is 576×599 (matches `window.resize(560, 560)` plus chrome),
+the dialog is 426×192. Don't trust title-only window identification again
+without checking size/class too.
+
+### "Minha config sumiu" — causa real: a grade nunca mostrou a config (2026-09-01, v3.2.0)
+Reported twice. **My first diagnosis was wrong** and should not be repeated:
+I blamed a stale second instance holding an outdated in-memory config, shipped
+a single-instance mutex (v3.1.0), and told the user it was fixed. It wasn't the
+cause — the report came back identical.
+
+**Actual cause**: the 4x4 grid rendered `label = "2FX" if idx == 15 else
+f"BTN{idx}"` — a hardcoded generic label. **A fully-configured pad looked
+byte-for-byte identical to an empty one.** The only way to see any mapping was
+to open each button's dialog one at a time. So "o programa subiu limpo sem
+nada" was an accurate description of what the UI showed, while the config was
+loading perfectly the whole time.
+
+**Verified before changing anything** (all of this was true and still the user
+was right): config.json intact with 8 buttons at the correct `%APPDATA%` path,
+readable AND writable, no crash in the Windows event log, installed exe was the
+current build, only one config.json on the whole machine, pad connected fine
+(it had moved COM5 -> COM8; the VID:PID auto-detect handled it).
+
+**Fixes shipped:**
+- `button_label()` / `action_summary()` / `is_configured()` — each key now shows
+  its assigned action (`BTN0 / Ctrl+C / 2FX>applause.mp3`), and assigned keys
+  render green. Refreshed at startup, after every save, and on language change.
+- **`app.log` next to config.json.** The app is a `--windowed` build, so every
+  `print()` was discarded — which is why each past field problem needed a
+  rebuild with temporary instrumentation just to see anything. The log answered
+  this one in a single run. Keep it; do not go back to print-only.
+- `save_config()` is now atomic (temp file + `os.fsync` + `os.replace`). The old
+  `open(path, "w")` truncated the real file *before* writing, so any crash mid-
+  save left an empty/half-written config and destroyed every mapping.
+- `load_config()` never silently falls back to defaults over an existing file:
+  a damaged config is renamed `.corrompido-<timestamp>` and reported, instead of
+  being overwritten once the user reconfigures. Save failures now raise a
+  message box too — a silent failed save is invisible data loss.
+
+**Lesson worth keeping**: when the user says data is missing, confirm *what they
+are actually looking at* before theorizing about storage. The file was never the
+problem; the display was.
+
+### Brilho próprio do indicador 2FX (2026-09-01, v3.3.0)
+New slider in Settings: **"Brilho do indicador 2FX" / "2FX indicator
+brightness"** (`config["settings"]["fx2_brightness"]`, range 10-150, same
+scale as the Color Settings brightness slider).
+
+**No firmware change** — deliberately reused the existing `LED:BRIGHTNESS:`
+command the firmware already handles, rather than adding a new one. Uploads
+to this board are flaky enough (see the V3.0 handshake notes) that avoiding
+a reflash is worth real design effort.
+
+`set_2fx_override()` now sends brightness *before* the mode command, both on
+arm and disarm. The order matters: Adafruit_NeoPixel's `setBrightness()`
+rescales the pixel buffer that's already loaded, so changing brightness
+after a colour has been written re-scales existing values and loses
+precision. Setting it first means the following command writes fresh pixels
+at the new brightness. Disarm restores `led_brightness` and then re-applies
+the idle pattern.
+
+Default is `led_brightness` (not a fixed number), via
+`setdefault("fx2_brightness", config["settings"]["led_brightness"])` — the
+2FX indicator previously just inherited the normal brightness, so an
+existing config looks *exactly* the same until the user actually moves the
+new slider. No surprise visual change on upgrade.
+
+**Screenshots regenerated without computer-use** (that MCP server dropped
+mid-session): the dialogs were instantiated standalone from a script that
+imports `app.py` with `QApplication.exec` stubbed out, then captured with
+Win32 `GetWindowRect` + `CopyFromScreen` from PowerShell. Worth remembering —
+manual screenshots do NOT depend on the screenshot MCP being available.
+Gotcha hit along the way: passing an accented window title (`Configurações`)
+through bash to PowerShell mangles the encoding and the match fails; match on
+an accent-free fragment (`onfigura`) instead.
 
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,

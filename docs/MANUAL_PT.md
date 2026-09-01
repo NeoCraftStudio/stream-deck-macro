@@ -62,11 +62,10 @@ para encerrar de verdade.
 O aplicativo está disponível em **Português** e **English**, trocável a
 qualquer momento em Configurações (veja
 [Trocando o idioma do aplicativo](#trocando-o-idioma-do-aplicativo)).
-O padrão é Português. *Nota: as capturas de tela deste manual foram feitas
-antes desse recurso existir, então alguns rótulos mostrados (títulos de
-janela, texto de botão) estão no idioma que era padrão na época — o layout
-e o fluxo das janelas são idênticos, só o texto muda conforme o idioma
-agora.*
+O padrão é Português. *Nota: algumas das capturas menores de janelas neste
+manual foram feitas antes do recurso de idioma existir, então alguns rótulos
+podem aparecer no outro idioma — o layout e o fluxo são idênticos, só o
+texto muda.*
 
 ---
 
@@ -110,13 +109,12 @@ se quiser removê-la manualmente também.
 
 ![Janela principal](images/main_window.png)
 
-*Nota: esta captura de tela é de antes de uma pequena mudança de layout —
-o único botão embaixo agora são três, lado a lado: **Configurações de
-Cor**, **Configurações** e **Ajuda** (veja abaixo).*
-
-Uma grade 4×4 de botões, mais os 3 encoders à direita. A borda animada
-mostra o padrão de LED atual do pad, ao vivo. Clique em **qualquer botão**
-para configurá-lo. Abaixo da grade, três botões:
+Uma grade 4×4 de botões, mais os 3 encoders à direita. **Cada tecla mostra
+o que ela faz** — o atalho ou som atribuído, com uma linha `2FX▸` para a
+ação da segunda camada — e as teclas configuradas aparecem em verde, então
+dá para ver toda a sua configuração de relance. A borda animada mostra o
+padrão de LED atual do pad, ao vivo. Clique em **qualquer botão** para
+configurá-lo. Abaixo da grade, três botões:
 - **Configurações de Cor** — muda o padrão de LED (veja
   [Mudando o padrão de LED](#mudando-o-padrão-de-led)).
 - **Configurações** — tempo da 2FX e idioma do app (veja
@@ -175,7 +173,15 @@ coisa para cancelar sem executar nenhuma ação.
 Para mudar quanto tempo a Camada 2 fica armada antes de desarmar sozinha,
 clique no botão **Configurações** abaixo da grade:
 
-![Janela de Configurações](images/config_2fx_timeout.png)
+![Janela de Configurações](images/config_settings.png)
+
+### Mudando o brilho do indicador 2FX
+
+Enquanto a Camada 2 está armada, os LEDs do pad pulsam em vermelho. A barra
+**Brilho do indicador 2FX**, em **Configurações**, controla o quanto esse
+pulso é forte, de forma independente do seu brilho normal — deixe maior que
+o normal para o estado armado ficar bem visível, ou menor para ficar
+discreto. O brilho normal volta sozinho assim que a Camada 2 desarma.
 
 ### Trocando o idioma do aplicativo
 
