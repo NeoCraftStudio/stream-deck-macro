@@ -46,6 +46,12 @@ teaching over speed.
   personal sound-file names and paths; `tests/obs_secrets.json` holds a real
   password and must never be committed (verified: it never has been). Check
   any new screenshot or example for personal content before committing it.
+- **The 3D case is a separate commercial product — keep it out of this
+  repo** (requested 2026-09-01). Its STL/SCAD files were purged from the
+  whole git history so they cannot be recovered from old commits. Never
+  re-add case files, renders or design parameters here; they live outside
+  the repo in `3d-craft/case-3d-comercial/`. Point people to the
+  marketplace listing instead.
 - **No teaching for Arduino/C++ firmware code** (requested 2026-07-19) — the
   user does not want to learn Arduino/C++, only Git, GitHub, and Python (the
   original scope). For firmware work: just give the code and the steps, no
@@ -641,124 +647,27 @@ gap to fix.**
   only additionally helps if the app process isn't running at all. Revisit
   and decide in a future session; don't forget this was raised.
 
-## Physical case design (OpenSCAD) — status as of 2026-07-22
-Case design moved into **this** Claude Code session (user said the separate
-claude.ai conversation's case decisions were wrong — case work now happens
-here, in `case/`, not there). Tool: **OpenSCAD** (installed at
-`E:\OpenScad\openscad.exe`, CLI-capable — used to render preview PNGs
-directly via `openscad.exe -o out.png --camera=... --render file.scad`,
-shown inline to the user for iteration, since neither `color()` nor the `%`
-transparency modifier survive OpenSCAD's `--render` PNG export pipeline —
-confirmed by direct testing, not just a hunch. For any future fit-check
-that needs multiple distinguishable objects, the user's own OpenSCAD GUI
-(F5 preview) is the reliable option, not a CLI screenshot.
+## Physical case — moved out of this repository (2026-09-01)
 
-**Design lineage:**
-- Started from **MisteRdeck** (printables.com/model/134529, CC BY-SA,
-  attribution: MattRigg) as loose visual inspiration only — no files used.
-- User then provided a *different* reference actually downloaded to disk:
-  **"DIY Mechanical Macro Keypad — Ocreeb"**
-  (`D:\Downloads\DIY Mechanical Macro Keypad ― Ocreeb - 5535019\files\`,
-  copied into `case/reference/`: `Case_Top.stl` [88×94×18mm, 4×3 keys + 2
-  encoders], `Case_Bottom.stl` [86.5×92.5×10mm tray], `Knob.stl`). Confirmed
-  with the user this is a **real derivative use** (not just inspiration) —
-  CC BY-SA attribution + share-alike would apply to the case design
-  specifically if it's ever shared/sold (electronics/firmware/app are
-  unaffected).
-- Tried scaling/stretching their actual STL non-uniformly — **don't do
-  this**: it distorts fixed-angle chamfers unevenly. Abandoned in favor of
-  fresh parametric geometry inspired by their style (chamfered corners +
-  beveled top edge + recessed switch deck), which is what all `case_v*`
-  files use now.
+The 3D enclosure is no longer part of this project's source tree: it is
+published and sold separately on 3D model marketplaces. **Its STL/SCAD
+files were purged from the entire git history**, not just deleted going
+forward, because leaving them recoverable from old commits would defeat
+selling them.
 
-**Current real component count (do not confuse with the Ocreeb reference's
-12 keys/2 encoders): 16 positions (4×4 incl. 2FX) + 3 encoders**, matching
-the firmware/app. Layout: switch grid on the **left**, 3 encoders in a
-column on the **right** (user's explicit call, reversing the Ocreeb
-reference's top-mounted 2-encoder layout).
-
-**Files** (in `case/`):
-- `case_params.scad` — shared dimensions (switch pitch/hole, grid size,
-  encoder spacing, margins, corner chamfer, `rim_height`=20mm, bevel,
-  border, deck recess) — both top and bottom `include` this, keep them
-  in sync through here, not by duplicating numbers.
-- `case_v4_top.scad` — **current working file**, top plate. Contains
-  `case_top()` (base: chamfered rim + tapered top bevel + recessed switch
-  deck + 4×4 grid holes + 3 encoder holes, encoder hole `d=7mm` is a
-  **placeholder — must be confirmed with calipers** before final print) and
-  `case_top_split_tilt()` (the active top-level call — see "in-progress"
-  below).
-- `case_v4_bottom.scad` — bottom tray, slides up into the top's inner
-  cavity from below. Has its own perimeter wall (not a flat disc — user
-  explicitly asked for a wall so it slides/guides into the top, not just
-  floats loose). `fit_clearance=0.25mm` per side (needed for FDM printing;
-  an exact-match dimension won't physically slide).
-- `case_v4_assembly.scad` — fit-check helper, `use`s both top and bottom.
-- `validate_case.py` — geometry sanity checks.
-- `*.stl` — the current printable exports (deck, crest, mount, pins, bottom).
-
-**Removed from the repo on 2026-09-01** (user: keep only what the base
-project needs, no third-party files, no iteration artefacts). All of it is
-still recoverable from git history before that commit, and the Ocreeb STLs
-remain on the user's own disk at the download path above:
-- `case/reference/` — the third-party Ocreeb STLs. **Deleted primarily for
-  licensing**, not size: they are someone else's CC BY-SA files and a public
-  repo redistributes them. Do not re-add them.
-- `case/view_ocreeb_*.scad` — one-line viewers that only `import()` those
-  reference STLs; useless without them.
-- `case/renders/*.png` — dated iteration screenshots, never load-bearing.
-- `case_v2_top.scad`, `case_v3_top.scad`, `plate_v1.scad`,
-  `debug_assembly.scad` — superseded by v4. The iteration history below is
-  kept as written notes precisely so the files themselves don't have to be.
-
-**Iteration history (what was tried and rejected, so it isn't retried):**
-1. v1-v3: flat plate, various bevel attempts. v2's non-uniform-scaled-STL
-   approach was rejected (see above). v3 fixed a real bug: OpenSCAD's
-   `linear_extrude(scale=...)` scales around the **origin**, not the
-   shape's center — an off-origin polygon bevels unevenly (2 sides get no
-   taper at all) unless you center it before scaling and translate back
-   after. Remember this if any future bevel/taper looks lopsided.
-2. v4: added the recessed switch deck (hollow rim + separate deck slab —
-   user wanted the keys visibly recessed below the outer bezel, matching
-   the Ocreeb reference, not flush). Fixed `encoder_gap` 30→15 (user: too
-   far from the keys). Increased `rim_height` 8→20mm (user: "2cm" walls).
-   Bottom plate had a **real positioning bug**: it used `fit_clearance` as
-   its offset instead of `border + fit_clearance`, so it sat near the
-   outer corner instead of centered in the inner cavity — fixed.
-3. v5 (abandoned): tried a single continuous slope (thin front, tall back)
-   by slicing the whole shell with a rotated cutting plane. **This is
-   wrong for this design** — it sliced straight through the switch deck
-   and removed an entire row of keys, because the front height chosen was
-   below the deck's Z-position. Any future "uniform slope" attempt must
-   either keep front_height above the deck's top, or use the split-tilt
-   approach below instead.
-4. **v6 (current, in-progress, UNVERIFIED)**: user's actual request —
-   left/right rails stay flat/vertical at the full `rim_height` (20mm, no
-   angle at all); the *middle* section (the switch deck + all hole cutting)
-   is tilted so its front (y=0) stays flush with the rails and its back
-   (y=`plate_d`) sits `riser_height`=8mm higher. Implemented via
-   **`multmatrix()` shear** (`case_top_split_tilt()`, current top-level
-   call in `case_v4_top.scad`) — a shear repositions existing geometry
-   instead of cutting into it, avoiding the v5 failure mode. Math was
-   hand-verified but **never visually confirmed** — repeated attempts at
-   finding a CLI camera angle that clearly shows the tilt profile failed
-   (OpenSCAD's camera gimbal convention behaved inconsistently across
-   attempts: same rx value gave a top-down view in one file and a side
-   profile in another — don't trust remembered camera parameters, re-derive
-   per file). **Next step when resuming: get the user to open this file in
-   their own OpenSCAD GUI and confirm the tilt actually looks right — if
-   not, the two things to adjust are `riser_height` and the shear math in
-   `case_top_split_tilt()`.**
-
-**Not yet built:** bottom tray hasn't been revisited since the split-tilt
-change (may need its own wall-height adjustment to still mate correctly
-with a tilted top — not checked yet). No STL has been exported for
-printing yet — everything so far is still in the "getting the shape right"
-iteration phase.
+- Files and the full design notes (parameters, tilt/shear math, fit
+  clearances, iteration history) live outside the repo, alongside the
+  product: `D:\Projetos
+eocraftstudiod-craft\case-3d-comercial\`.
+- **Do not re-add any case file, render, STL or SCAD to this repository**,
+  and do not paste the design parameters back into this file — that is the
+  know-how being sold.
+- README and ROADMAP point buyers to the marketplaces instead; add the real
+  URL there once the listing is live.
 
 ## Open items
-- Physical case layout — see full status above. Components already
-  purchased (see "Purchases / BOM").
+- Physical case — no longer tracked here (sold separately; see the section
+  above). Components already purchased (see "Purchases / BOM").
 - Whether the gray + white DSA keycap sets (50 each) are intentional (e.g.
   2FX layer color-coding) or a duplicate order — unresolved, ask before
   designing keycap layout around it.

@@ -25,13 +25,9 @@ flowchart TD
     P11 --> P12["Phase 12: 2FX state machine"]:::done
     P12 --> P13["Phase 13: GUI (PySide6)"]:::done
     P13 --> P14["Phase 14: Full integration"]:::done
-    P14 --> P15["Phase 15: Packaging .exe"]:::current
-    P0 -.-> C["Case: 3D-printed enclosure"]:::todo
-    C -.-> P14
+    P14 --> P15["Phase 15: Packaging .exe"]:::done
 
     classDef done fill:#2ea043,stroke:#2ea043,color:#fff
-    classDef current fill:#d29922,stroke:#d29922,color:#000
-    classDef todo fill:#30363d,stroke:#8b949e,color:#c9d1d9
 ```
 
 🟢 done · 🟡 current · ⬛ not started
@@ -54,5 +50,19 @@ flowchart TD
 - [x] Phase 12 — App: 2FX layer state machine (arm/cancel/timeout/layer-2-fire all confirmed against real hardware)
 - [x] Phase 13 — App: GUI (PySide6) — grid, per-key config popup (incl. recorded-macro type), 2FX timeout settings, and per-encoder config (system vs. per-app via file picker) all confirmed saving to config.json
 - [x] Phase 14 — Full integration: firmware two-way command (`LED:SOLID:r,g,b`) confirmed, app listens to serial live via a `QTimer` (non-blocking, GUI stays responsive) and executes real actions (keyboard/macro, sound, OBS scene) through the 2FX logic. Follow-up polish (not blocking): app doesn't yet send LED feedback on 2FX arm/disarm, encoder events not yet wired to volume/mute.
-- [ ] Phase 15 — Packaging (PyInstaller .exe) **← current**
-- [ ] Case — 3D-printed enclosure (parallel track, not blocking)
+- [x] Phase 15 — Packaging: PyInstaller (--onedir) wrapped in a per-user Inno
+      Setup installer, custom icon, single-instance guard, English/Portuguese
+      UI, and a user manual in both languages
+
+## Not in this repository
+
+- **3D-printed enclosure** — published and sold separately on 3D model
+  marketplaces. Its STL/SCAD sources are a standalone product and are
+  deliberately not distributed here.
+
+## Still open
+
+- [ ] Encoders 2 and 3 in the firmware (the app already exposes all three;
+      only ENC1 is reported by the firmware today)
+- [ ] Final 16-LED build — the original LED reel is faulty, only spare bare
+      LEDs have been verified so far

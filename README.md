@@ -11,9 +11,20 @@ playback, and real per-app mute.
 
 ## Status
 
-In active development. Firmware phases (matrix, encoder, LEDs) verified on
-hardware; app-side phases (serial reader, config, keyboard/audio/OBS
-actions, 2FX logic) verified individually. Full roadmap below.
+Working and packaged. The firmware (matrix, encoder, LEDs, identity
+handshake) is verified on hardware, and the companion app ships as a
+Windows installer with a user manual in English and Portuguese
+([EN](docs/MANUAL.md) · [PT](docs/MANUAL_PT.md)).
+
+## 3D-printed enclosure
+
+The case is **not distributed in this repository**. It is published and
+sold separately on 3D model marketplaces — the STL and SCAD sources are a
+standalone product, not part of this source tree. A link will be added here
+once it is live.
+
+This repository covers the electronics, firmware, companion app and
+documentation.
 
 ## Roadmap
 
@@ -34,13 +45,9 @@ flowchart TD
     P11 --> P12["Phase 12: 2FX state machine"]:::done
     P12 --> P13["Phase 13: GUI (PySide6)"]:::done
     P13 --> P14["Phase 14: Full integration"]:::done
-    P14 --> P15["Phase 15: Packaging .exe"]:::current
-    P0 -.-> C["Case: 3D-printed enclosure"]:::todo
-    C -.-> P14
+    P14 --> P15["Phase 15: Packaging .exe"]:::done
 
     classDef done fill:#2ea043,stroke:#2ea043,color:#fff
-    classDef current fill:#d29922,stroke:#d29922,color:#000
-    classDef todo fill:#30363d,stroke:#8b949e,color:#c9d1d9
 ```
 
 Full checklist with descriptions: [ROADMAP.md](ROADMAP.md)
