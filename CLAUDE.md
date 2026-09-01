@@ -694,10 +694,22 @@ reference's top-mounted 2-encoder layout).
   floats loose). `fit_clearance=0.25mm` per side (needed for FDM printing;
   an exact-match dimension won't physically slide).
 - `case_v4_assembly.scad` — fit-check helper, `use`s both top and bottom.
-- `case/reference/` — the Ocreeb STLs (unmodified, for visual reference /
-  do-not-redistribute-without-attribution).
-- `case/renders/*.png` — dated iteration screenshots, safe to ignore/delete,
-  not load-bearing.
+- `validate_case.py` — geometry sanity checks.
+- `*.stl` — the current printable exports (deck, crest, mount, pins, bottom).
+
+**Removed from the repo on 2026-09-01** (user: keep only what the base
+project needs, no third-party files, no iteration artefacts). All of it is
+still recoverable from git history before that commit, and the Ocreeb STLs
+remain on the user's own disk at the download path above:
+- `case/reference/` — the third-party Ocreeb STLs. **Deleted primarily for
+  licensing**, not size: they are someone else's CC BY-SA files and a public
+  repo redistributes them. Do not re-add them.
+- `case/view_ocreeb_*.scad` — one-line viewers that only `import()` those
+  reference STLs; useless without them.
+- `case/renders/*.png` — dated iteration screenshots, never load-bearing.
+- `case_v2_top.scad`, `case_v3_top.scad`, `plate_v1.scad`,
+  `debug_assembly.scad` — superseded by v4. The iteration history below is
+  kept as written notes precisely so the files themselves don't have to be.
 
 **Iteration history (what was tried and rejected, so it isn't retried):**
 1. v1-v3: flat plate, various bevel attempts. v2's non-uniform-scaled-STL
