@@ -1,0 +1,40 @@
+﻿ABOUT THE WINDOWS WARNING
+
+If Windows showed "Windows protected your PC" before this installer opened,
+that does NOT mean something is wrong.
+
+The warning appears because this installer is not digitally signed. Signing
+requires a paid certificate, renewed every year, and this is an open,
+non-commercial project. Windows shows the same warning for any new unsigned
+program, regardless of what it does.
+
+If you want to check for yourself, the full source code is at:
+https://github.com/NeoCraftStudio/stream-deck-macro
+
+
+HOW THIS PROGRAM IS INSTALLED
+
+- For your user account only, with no administrator password.
+- No services, no drivers, nothing running in the background except the
+  application itself.
+- Your settings live in %APPDATA%\NeoCraft Macro Desk, OUTSIDE the program
+  folder, so they survive updates and uninstalls.
+- To remove it: Windows Settings > Apps, or the "Uninstall" shortcut in the
+  Start Menu.
+
+
+WHAT WORKS ON ITS OWN, AND WHAT NEEDS OTHER SOFTWARE
+
+Works with nothing but this app and your macro pad:
+  - Keyboard shortcuts and recorded macros
+  - Sound playback on key press
+  - Per-application volume and mute
+  - LED lighting and effects
+  - Second-function layer (2FX)
+
+The app already ships with the connection built in, but the third-party
+program itself has to be installed by you:
+  - OBS Studio (version 28 or newer) for scene switching
+  - A virtual audio cable, such as VB-Cable, to send sound into Discord
+
+Without them, everything else keeps working normally.

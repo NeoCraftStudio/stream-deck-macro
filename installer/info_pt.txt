@@ -1,0 +1,40 @@
+﻿SOBRE O AVISO DO WINDOWS
+
+Se o Windows mostrou "O Windows protegeu o computador" antes deste
+instalador abrir, isso NÃO significa que algo esteja errado.
+
+Esse aviso aparece porque o instalador não tem assinatura digital. Uma
+assinatura exige um certificado pago, renovado todo ano, e este é um
+projeto aberto e sem fins comerciais. O Windows mostra o mesmo aviso para
+qualquer programa novo e sem assinatura, independente do que ele faça.
+
+Se quiser conferir por conta própria, o código-fonte completo está em:
+https://github.com/NeoCraftStudio/stream-deck-macro
+
+
+COMO ESTE PROGRAMA É INSTALADO
+
+- Somente para o seu usuário, sem pedir senha de administrador.
+- Não instala serviços, drivers nem nada que rode em segundo plano além do
+  próprio aplicativo.
+- Suas configurações ficam em %APPDATA%\NeoCraft Macro Desk, FORA da pasta
+  do programa, então sobrevivem a atualizações e à desinstalação.
+- Para remover: Configurações do Windows > Aplicativos, ou o atalho
+  "Uninstall" no Menu Iniciar.
+
+
+O QUE FUNCIONA SOZINHO E O QUE PRECISA DE OUTROS PROGRAMAS
+
+Funciona apenas com o aplicativo e o seu macro pad:
+  - Atalhos de teclado e macros gravadas
+  - Reprodução de sons nas teclas
+  - Controle de volume e mudo por aplicativo
+  - Iluminação e efeitos dos LEDs
+  - Camada de segunda função (2FX)
+
+O aplicativo já traz a conexão pronta para estes, mas o programa de
+terceiro precisa ser instalado por você:
+  - OBS Studio (versão 28 ou mais nova) para trocar de cena
+  - Um cabo de áudio virtual, como o VB-Cable, para mandar som ao Discord
+
+Sem eles, todo o restante continua funcionando normalmente.
