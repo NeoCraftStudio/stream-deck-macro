@@ -828,7 +828,12 @@ eocraftstudiod-craft\case-3d-comercial\`.
 - Whether the gray + white DSA keycap sets (50 each) are intentional (e.g.
   2FX layer color-coding) or a duplicate order — unresolved, ask before
   designing keycap layout around it.
-- **Two-way serial protocol (PC → firmware LED commands, e.g. `LED:MODE:SOLID:RED`) deliberately deferred** — firmware currently only sends events, doesn't yet parse incoming commands. Must exist before Phase 14 (full integration), since that's how the app will drive LED behavior (including the 2FX indicator).
+- ~~Two-way serial protocol (PC → firmware LED commands) deferred.~~ **DONE
+  long ago; this entry was stale and was corrected 2026-10-03.** The firmware
+  parses `LED:MODE:SOLID/BREATHE/RAINBOWWAVE/COLORCYCLE`, `LED:BRIGHTNESS:`
+  and `LED:SPEED:` (`stream_deck_macro.ino`, the `Serial.readStringUntil`
+  block), and the app drives all of them from `send_led_command()` — including
+  the 2FX indicator, which sets brightness before switching to breathe.
 - **Discord audio routing driver decision (bundle vs. paid license vs. manual install) deferred to pre-launch** — see the "Routing sound into Discord" note above.
 
 ## Do NOT
