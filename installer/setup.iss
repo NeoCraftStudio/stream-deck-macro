@@ -26,8 +26,13 @@ WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+; InfoBeforeFile puts an "Information" page right after the welcome page. It
+; explains the SmartScreen warning the user has already seen by then (the
+; warning fires before this installer can run at all, so it can only be
+; explained after the fact — the README is where it's explained *before*),
+; and sets expectations about which features need third-party software.
+Name: "english"; MessagesFile: "compiler:Default.isl"; InfoBeforeFile: "info_en.txt"
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"; InfoBeforeFile: "info_pt.txt"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked

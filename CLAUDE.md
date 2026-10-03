@@ -69,6 +69,14 @@ teaching over speed.
   personal sound-file names and paths; `tests/obs_secrets.json` holds a real
   password and must never be committed (verified: it never has been). Check
   any new screenshot or example for personal content before committing it.
+  - **`config.json` IS in the git history, and that is fine — do not rewrite
+    history over it** (audited 2026-10-03). It was committed early on (added
+    in `4f28dd7`, present in 11 commits, removed in `c2caded` when the
+    gitignore rule landed). The committed content is a development test
+    config: 917 bytes, no absolute paths, no username, and the only media
+    reference is the placeholder `sounds/applause.mp3`. **Nothing personal is
+    exposed.** A `filter-repo` purge would carry real risk for zero benefit —
+    the last one is what destroyed the uncommitted v3.4.0 work.
 - **The 3D case is a separate commercial product — keep it out of this
   repo** (requested 2026-09-01). Its STL/SCAD files were purged from the
   whole git history so they cannot be recovered from old commits. Never

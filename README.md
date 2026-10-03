@@ -16,6 +16,40 @@ handshake) is verified on hardware, and the companion app ships as a
 Windows installer with a user manual in English and Portuguese
 ([EN](docs/MANUAL.md) · [PT](docs/MANUAL_PT.md)).
 
+## Installing
+
+The companion app ships as a per-user Windows installer: it goes into your
+own `%LOCALAPPDATA%\Programs`, asks for **no administrator password**, and
+installs no services or drivers. Settings live in
+`%APPDATA%\NeoCraft Macro Desk`, outside the program folder, so they survive
+updates and uninstalls.
+
+> **Windows will warn you, and that is expected.** The installer is **not
+> digitally signed**, so SmartScreen shows *"Windows protected your PC"*.
+> Click **More info → Run anyway**. Signing requires a paid certificate
+> renewed annually; this is an open, non-commercial project. Windows shows
+> that same warning for any new unsigned program, whatever it does — the
+> full source is in this repository if you want to check it yourself.
+
+The installer repeats this on its own Information page, together with the
+third-party notes below.
+
+### What works on its own, and what needs other software
+
+Works with nothing but the app and the pad: keyboard shortcuts and recorded
+macros, sound playback, per-application volume and mute, LED effects, and the
+2FX second-function layer.
+
+The app ships with the integration already built in, but the third-party
+program itself is yours to install:
+
+| feature | needs |
+| --- | --- |
+| OBS scene switching | OBS Studio 28+ (obs-websocket is built in from 28) |
+| Sound into Discord | a virtual audio cable, e.g. VB-Cable |
+
+Without them, everything else keeps working.
+
 ## 3D-printed enclosure
 
 The case is **not distributed in this repository**. It is published and
