@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "4.0.0"
+APP_VERSION = "4.1.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -394,6 +394,13 @@ def save_config():
 AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 AUTOSTART_VALUE = APP_NAME
 
+# Passed on the Run-key command line so a boot-time launch comes up as a tray
+# icon only, with no window. A manual launch has no flag and behaves as
+# before — the distinction is the command line, not a stored setting, so the
+# two cases can't get out of sync.
+TRAY_FLAG = "--tray"
+START_IN_TRAY = TRAY_FLAG in sys.argv[1:]
+
 
 def autostart_supported():
     # Only meaningful for the packaged app. Running from source, sys.executable
@@ -403,7 +410,26 @@ def autostart_supported():
 
 
 def autostart_command():
-    return f'"{sys.executable}"'
+    return f'"{sys.executable}" {TRAY_FLAG}'
+
+
+def sync_autostart_command():
+    # Repairs an existing Run entry whose command no longer matches what this
+    # version writes — an entry created before TRAY_FLAG existed, or one left
+    # pointing at a previous install path. Without this the user would have to
+    # uncheck and recheck the box to pick up the change, which nothing in the
+    # UI would ever tell them to do.
+    if not autostart_supported() or not is_autostart_enabled():
+        return
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY) as key:
+            atual, _ = winreg.QueryValueEx(key, AUTOSTART_VALUE)
+    except OSError:
+        return
+    if atual == autostart_command():
+        return
+    log(f"corrigindo o comando de inicialização: {atual}  ->  {autostart_command()}")
+    set_autostart(True)
 
 
 def is_autostart_enabled():
@@ -1831,12 +1857,24 @@ def refresh_static_ui():
     quit_action.setText(tr("tray_quit"))
     refresh_button_labels()
 
-window.show()
+# Started by Windows at boot: come up as a tray icon only, no window. Safe
+# because setQuitOnLastWindowClosed(False) is already set and the tray icon is
+# live by this point — the app keeps running with nothing on screen, and a
+# click on the tray icon opens the window.
+if START_IN_TRAY:
+    log("iniciado em modo bandeja (--tray), sem janela")
+else:
+    window.show()
 
-# Checked only now, with a window on screen, so the warning has somewhere to
-# appear. Catches the "nothing is being persisted" case at the moment it
-# happens instead of days later, when the user notices settings reverting.
+# Checked only now, with the GUI up, so a warning has somewhere to appear.
+# Catches the "nothing is being persisted" case at the moment it happens
+# instead of days later, when the user notices settings reverting.
 report_startup_problems()
-log(f"iniciar com o Windows: {'ligado' if is_autostart_enabled() else 'desligado'}")
+# State first, then any repair — otherwise a run that fixed the Run key logs
+# the same "iniciar com o Windows: X" line twice (set_autostart logs the
+# change) and the log reads as if something happened twice.
+log(f"estado da inicialização automática: "
+    f"{'ligada' if is_autostart_enabled() else 'desligada'}")
+sync_autostart_command()
 
 sys.exit(app.exec())

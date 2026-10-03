@@ -604,6 +604,33 @@ loss so hard to see in the first place.
 lost before being committed (see "Open items"). Reusing the number would make
 the log ambiguous about which build produced a line.
 
+### v4.1.0 (2026-10-03) — silent boot into the tray
+
+Requested right after v4.0.0 shipped: starting with Windows should bring up a
+tray icon only, with no window.
+
+- A `--tray` flag on the command line, nothing stored in `config.json`. The
+  Run key launches `"<exe>" --tray`; the Start Menu and desktop shortcuts have
+  no flag and behave exactly as before. **The distinction is the command line,
+  not a setting, so the two cases cannot drift out of sync** — there is no
+  stored "start minimized" value that could disagree with reality.
+- Skipping `window.show()` is safe because `setQuitOnLastWindowClosed(False)`
+  was already set and the tray icon is live by then: the app keeps running
+  with nothing on screen, and clicking the tray icon opens the window.
+- `sync_autostart_command()` repairs an existing Run entry whose command no
+  longer matches what this version writes — an entry made before `--tray`
+  existed, or one pointing at an older install path. Without it the user would
+  have to uncheck and recheck the box, and nothing in the UI would ever say so.
+  Verified live: an entry written by hand without the flag was upgraded
+  automatically on the next launch.
+- Startup now logs `estado da inicialização automática: ligada/desligada`
+  *before* the repair runs, so a run that fixed the key doesn't print two
+  identical-looking lines.
+
+Verified on the installed build, both paths: launched with `--tray` the
+process has `MainWindowHandle=0` (no window); launched normally the window is
+visible with the right title. Both connect to the pad.
+
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
   `ENC:2:CW`, `ENC:2:PUSH`). The app decides actions.

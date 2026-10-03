@@ -5,7 +5,7 @@
 ; app itself, not this installer) so it survives updates and uninstalls.
 
 #define MyAppName "NeoCraft Macro Desk"
-#define MyAppVersion "4.0.0"
+#define MyAppVersion "4.1.0"
 #define MyAppExeName "NeoCraft Macro Desk.exe"
 
 [Setup]
