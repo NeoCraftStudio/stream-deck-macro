@@ -50,7 +50,7 @@ teaching over speed.
   repo** (requested 2026-09-01). Its STL/SCAD files were purged from the
   whole git history so they cannot be recovered from old commits. Never
   re-add case files, renders or design parameters here; they live outside
-  the repo in `3d-craft/case-3d-comercial/`. Point people to the
+  the repo in the sibling folder `../case-3d-comercial/`. Point people to the
   marketplace listing instead.
 - **No teaching for Arduino/C++ firmware code** (requested 2026-07-19) — the
   user does not want to learn Arduino/C++, only Git, GitHub, and Python (the
