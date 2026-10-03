@@ -46,9 +46,12 @@ teaching over speed.
   or API behavior.
 - Don't assume automatic progression to the next step — the user signals when
   a topic is "under consideration" and resumes when ready.
-- This project is also an **English practice** — correct English mistakes
-  when they happen, set off in a blockquote (`>`) so it's visually distinct
-  from the rest of the reply.
+- **Talk to the user in Portuguese** (settled 2026-10-03). An earlier request
+  from 2026-07-18 made this project double as English practice, with English
+  mistakes corrected in a blockquote. That lapsed in practice months ago and
+  the user has now confirmed Portuguese is what he wants — so don't switch to
+  English and don't correct his English unless he asks again. This file and
+  the code/comments stay in English.
 - **Format action steps separately from explanation** (requested 2026-07-19):
   put the "why"/explanation as prose first, then a clear separator, then the
   actual steps to do as a bare numbered list — no explanation mixed into the
