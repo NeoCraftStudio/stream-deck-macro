@@ -9,6 +9,26 @@ teaching over speed.
 
 ## How to work on this project
 
+- **Every decision that matters goes in BOTH places, always: this repo and
+  ai-memory** (requested 2026-10-03). Not one or the other. The repo holds it
+  where the code lives; ai-memory (project `stream-deck`, workspace `default`)
+  holds it where a session that never opens the repo can still find it.
+  - This rule exists because of a concrete failure: the ENC2/ENC3 pin
+    assignment was decided, written only into a "RETOMAR AQUI" section of this
+    file, and then deleted in a repo-trimming commit. It was gone. The same
+    pattern bit us a second time the same day — a stale `NOTAS-DESIGN.md`
+    claimed the case's encoder hole was an unconfirmed placeholder when
+    `case_params.scad` had it caliper-confirmed, and that produced a wrong
+    priority list for the user.
+  - **Record the reasoning, not just the conclusion.** "Pinout closed" was
+    written down; the actual pin map was not, so the decision could not be
+    reconstructed from the note. A decision without its constraint is not
+    recoverable.
+  - **Before deleting or trimming anything from this file, check whether it is
+    the only copy of a decision.** If it is, move it — don't drop it.
+  - When a documented decision and the code disagree, say so and resolve it;
+    never silently trust either one.
+
 - Explain in 1-3 sentences what you're about to do and why, *before* doing it
   — especially for new Python concepts (classes, decorators, async, context
   managers, etc.). Explain the "why", not just the "how", without turning
@@ -71,10 +91,19 @@ teaching over speed.
   data pin (D16/MOSI); ~330Ω resistor in series on data, ~1000µF capacitor
   near the first LED (skippable for small bench tests, needed on the real
   16-LED build); brightness capped in software (USB current budget).
-- **Color order confirmed via bench test: `NEO_RGB`, not the WS2812B-typical
-  `NEO_GRB`** — tested on a bare 4-pin through-hole LED (legs, in order from
-  the cut-corner side: DIN, VDD, GND, DOUT). Don't assume GRB when wiring the
-  final build; verify per batch if the LED source changes.
+- **⚠ LED colour order — this note and the firmware CONTRADICT each other
+  (spotted 2026-10-03, unresolved).** This file has long said the bench test
+  confirmed `NEO_RGB`, not the WS2812B-typical `NEO_GRB` — tested on a bare
+  4-pin through-hole LED (legs, in order from the cut-corner side: DIN, VDD,
+  GND, DOUT). But `firmware/stream_deck_macro.ino` line 39 instantiates the
+  strip with **`NEO_GRB`**.
+  Only one can be right. The firmware is the artifact that actually works on
+  the bench today (the LED modes were reconfirmed on hardware after the
+  "LEDs always red" fix), so `NEO_GRB` is the more likely truth and this note
+  is probably the stale side — but that has not been verified, so neither was
+  changed. **Settle it with one look at the real LEDs before the final 16-LED
+  build**, then correct whichever side is wrong. Verify per batch anyway if
+  the LED source changes.
 - The original 100+ LED reel (WS2812B DC5V, confirmed via listing) did not
   light in testing (ruled out: wiring, continuity, resistor, pin, board
   health, timing frequency, color order — all checked). Root cause not yet
@@ -82,7 +111,38 @@ teaching over speed.
   wired the same way worked correctly, isolating the fault to the reel
   itself. Unresolved: either find a working segment further down the reel,
   or the reel needs replacing before the final 16-LED build.
-- Pinout closed, 18/18 pins used, no spares.
+- Pinout closed, 18/18 pins used, no spares. **The full map is below — it was
+  asserted as "closed" for a long time without ever being written down, and
+  the ENC2/ENC3 half was lost once in a repo cleanup. It is recorded here now
+  because it is not recoverable from the firmware alone.**
+
+#### Pin map (complete, closed)
+
+The Pro Micro exposes 18 usable I/O pins. All 18 are allocated:
+
+| pins | use | status |
+| --- | --- | --- |
+| `3, 4, 5, 6` | matrix rows (OUTPUT) | in firmware |
+| `7, 8, 9, 10` | matrix columns (INPUT_PULLUP) | in firmware |
+| `0, A0, A1` | ENC1 — CLK, DT, SW | in firmware |
+| `16` | WS2812B data (D16/MOSI) | in firmware |
+| `2, A2, A3` | **ENC2 — CLK, DT, SW** | **not in firmware yet** |
+| `1, 14, 15` | **ENC3 — CLK, DT, SW** | **not in firmware yet** |
+
+**Why ENC2/ENC3 land exactly there — this is forced, not a preference.**
+On the ATmega32U4 only five pins can raise an external interrupt:
+`0, 1, 2, 3, 7`. Of those, `0` is already ENC1's CLK, `3` is a matrix row and
+`7` is a matrix column. That leaves **only `1` and `2`**, and an encoder's CLK
+must be interrupt-driven (polling loses steps at speed). So ENC2's CLK and
+ENC3's CLK are the only possible assignment. DT and SW are plain reads, so
+they take the four remaining free pins (`14, 15, A2, A3`) and the split
+between them is arbitrary.
+
+Consequence: there is no room for a fourth encoder, nor for any other
+interrupt-driven peripheral. Adding one means giving something up.
+
+**Blocked on hardware:** the encoders must be physically wired to those pins
+before the firmware work can be tested.
 
 ### Case / component decisions (from a separate conversation, folded in 2026-07-21)
 - **Switches**: Outemu, cheapest available, plate-mount (clip into 14mm
