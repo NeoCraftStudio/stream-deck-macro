@@ -726,6 +726,24 @@ eocraftstudiod-craft\case-3d-comercial\`.
   URL there once the listing is live.
 
 ## Open items
+- **⚠ v3.4.0 was lost — the "start with Windows" feature must be rewritten
+  (found 2026-10-03).** The autostart opt-in checkbox for the Settings tab was
+  implemented, built and ran: `app.log` records `=== NeoCraft Macro Desk
+  v3.4.0 iniciado ===` at 2026-09-01 17:45. At **18:09** the working tree was
+  overwritten during the `git filter-repo` surgery that purged the case from
+  history, and `app.py` went back to 3.3.0 with no autostart. **It was never
+  committed** — `git log -S "autostart" --all` returns nothing, so it is not
+  recoverable from any commit or from the `.bundle` backup.
+  What survives is the built binary in `dist/` (byte-identical to the one
+  installed under `%LOCALAPPDATA%\Programs`, same MD5), which *does* have the
+  feature — so the installed app can switch autostart on today even though the
+  source cannot rebuild it. Implementation notes, for the rewrite: per-user
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` via `winreg` (no admin
+  needed), value = the quoted `sys.executable`, gated on `sys.frozen` so it is
+  inert when running from source.
+  **Lesson, and the reason this is written down: before any destructive git
+  operation (`filter-repo`, reset, rebase, force), check the working tree for
+  uncommitted work and preserve it first.**
 - Physical case — no longer tracked here (sold separately; see the section
   above). Components already purchased (see "Purchases / BOM").
 - Whether the gray + white DSA keycap sets (50 each) are intentional (e.g.
