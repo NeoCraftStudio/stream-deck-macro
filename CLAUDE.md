@@ -566,6 +566,44 @@ Gotcha hit along the way: passing an accented window title (`Configurações`)
 through bash to PowerShell mangles the encoding and the match fails; match on
 an accent-free fragment (`onfigura`) instead.
 
+### v4.0.0 (2026-10-03) — autostart rebuilt + silent-failure hardening
+
+Rebuilds what v3.4.0 had and lost, and fixes the class of bug that made the
+loss so hard to see in the first place.
+
+**Start with Windows** (`autostart_supported` / `is_autostart_enabled` /
+`set_autostart`, checkbox in the Settings dialog):
+- Per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value name =
+  `APP_NAME`, value = the quoted `sys.executable`. No admin, no UAC, no
+  scheduled task.
+- **The checkbox reads the real registry, never a mirror in `config.json`** —
+  it can't claim "on" while Windows disagrees. This matters: the user spent
+  two reboots believing autostart was active.
+- Gated on `sys.frozen`. Running from source the box is disabled, because
+  registering `python.exe` would launch a bare interpreter at boot and would
+  break as soon as the tree moved.
+- **`set_autostart()` reads the value back after writing** and returns an
+  error if it doesn't match. A write that silently doesn't take is exactly
+  the failure mode this release exists to eliminate.
+- Applied only when it actually changed, so OK doesn't rewrite the Run key
+  every time. Failures surface via `warn_user`, not a swallowed exception.
+
+**Silent-failure hardening:**
+- `log()` no longer ends in a bare `except: pass`. A failure is recorded in
+  `_log_error` and the line still goes to `FALLBACK_LOG_PATH` (the temp dir),
+  so a diagnostic line is never lost entirely.
+- `check_data_dir_writable()` writes and deletes a probe file in the data
+  directory **at every startup**, proving the folder really accepts writes
+  instead of finding out when a save quietly does nothing.
+- `report_startup_problems()` runs once after the window exists and tells the
+  user outright if settings will not persist.
+- Startup now logs the autostart state, so the log alone answers "was it
+  supposed to start with Windows?".
+
+**Why this release is 4.0.0 and not 3.4.1:** 3.4.0 was built, ran, and was
+lost before being committed (see "Open items"). Reusing the number would make
+the log ambiguous about which build produced a line.
+
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
   `ENC:2:CW`, `ENC:2:PUSH`). The app decides actions.
@@ -729,8 +767,11 @@ eocraftstudiod-craft\case-3d-comercial\`.
   URL there once the listing is live.
 
 ## Open items
-- **⚠ v3.4.0 was lost — the "start with Windows" feature must be rewritten
-  (found 2026-10-03).** The autostart opt-in checkbox for the Settings tab was
+- ~~**v3.4.0 was lost — the "start with Windows" feature must be rewritten.**~~
+  **RESOLVED 2026-10-03: rebuilt as v4.0.0** (see the v4.0.0 section above).
+  The history is kept below because the *lesson* still applies to every future
+  destructive git operation.
+  The autostart opt-in checkbox for the Settings tab was
   implemented, built and ran: `app.log` records `=== NeoCraft Macro Desk
   v3.4.0 iniciado ===` at 2026-09-01 17:45. At **18:09** the working tree was
   overwritten during the `git filter-repo` surgery that purged the case from

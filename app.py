@@ -35,6 +35,8 @@ if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
 import time
 import json
 import math
+import tempfile
+import winreg
 import colorsys
 import serial
 import serial.tools.list_ports
@@ -51,13 +53,13 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout, QVBoxLayout, QHBoxLayout, QPushButton,
     QDialog, QComboBox, QLineEdit, QDialogButtonBox, QLabel, QSpinBox,
-    QKeySequenceEdit, QFileDialog, QSlider, QSystemTrayIcon, QMenu
+    QKeySequenceEdit, QFileDialog, QSlider, QSystemTrayIcon, QMenu, QCheckBox
 )
 
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "3.3.0"
+APP_VERSION = "4.0.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -128,12 +130,24 @@ DEFAULT_CONFIG = {
 LOG_PATH = os.path.join(user_data_dir(), "app.log")
 
 
+# Set when writing to LOG_PATH fails. v3.x swallowed that failure with a
+# bare `except: pass`, which is exactly why a run that persisted nothing
+# looked identical to a run that worked — the log simply had no new lines and
+# there was no other signal. Now the failure is remembered and surfaced once
+# the GUI is up (see report_startup_problems).
+_log_error = None
+# Where lines go when the normal log can't be written. A line that can't be
+# written anywhere is a line that can't be used to diagnose anything.
+FALLBACK_LOG_PATH = os.path.join(tempfile.gettempdir(), f"{APP_NAME}.log")
+
+
 def log(msg):
     # The app ships as a --windowed build, which means stdout/stderr go
     # nowhere: every print() is silently discarded once packaged. That made
     # every field problem ("my config vanished") undiagnosable without
     # rebuilding an instrumented copy first. This writes a real log next to
     # config.json so the app can explain itself after the fact.
+    global _log_error
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
     print(line)
     try:
@@ -141,8 +155,57 @@ def log(msg):
             os.replace(LOG_PATH, LOG_PATH + ".old")  # keep one previous run's worth
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(line + "\n")
+        return
+    except Exception as e:
+        _log_error = f"{type(e).__name__}: {e}"
+    try:
+        with open(FALLBACK_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
     except Exception:
         pass  # logging must never be the thing that breaks the app
+
+
+def check_data_dir_writable():
+    # Proves, at every startup, that the folder holding config.json can
+    # actually be written — instead of only finding out when a save silently
+    # does nothing and the user reports "my settings vanished" days later.
+    # Writes a probe file and deletes it again.
+    probe = os.path.join(user_data_dir(), ".escrita-ok")
+    try:
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
+            f.flush()
+            os.fsync(f.fileno())
+        os.remove(probe)
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
+def report_startup_problems():
+    # Called once, after the GUI exists, so a MessageBox has a parent and
+    # doesn't fight with the splash-less startup. Everything here is a
+    # "your changes will not persist" class of problem, which the app used to
+    # hide completely.
+    write_error = check_data_dir_writable()
+    if write_error:
+        log(f"ERRO: a pasta de dados não aceita escrita: {write_error}")
+        warn_user(
+            "O aplicativo não consegue gravar na pasta de dados:\n"
+            f"{user_data_dir()}\n\n"
+            f"Erro: {write_error}\n\n"
+            "Suas configurações NÃO vão ser salvas enquanto isso não for "
+            "resolvido."
+        )
+    elif _log_error:
+        log(f"aviso: o log principal falhou antes ({_log_error})")
+        warn_user(
+            "Não foi possível escrever no arquivo de log:\n"
+            f"{LOG_PATH}\n\n"
+            f"Erro: {_log_error}\n\n"
+            f"As mensagens estão indo para:\n{FALLBACK_LOG_PATH}\n\n"
+            "O aplicativo funciona normalmente; só o diagnóstico fica limitado."
+        )
 
 
 def warn_user(message):
@@ -235,6 +298,18 @@ TR = {
         "pt": "Tempo de espera da segunda função (segundos):",
     },
     "language_label": {"en": "Language:", "pt": "Idioma:"},
+    "autostart_label": {
+        "en": "Start automatically with Windows",
+        "pt": "Iniciar automaticamente com o Windows",
+    },
+    "autostart_source_only": {
+        "en": "(only available in the installed app)",
+        "pt": "(disponível apenas no aplicativo instalado)",
+    },
+    "autostart_failed": {
+        "en": "Could not change the Windows startup setting.\n\nError: {error}",
+        "pt": "Não foi possível alterar a inicialização com o Windows.\n\nErro: {error}",
+    },
     "fx2_brightness_label": {
         "en": "2FX indicator brightness:",
         "pt": "Brilho do indicador 2FX:",
@@ -308,6 +383,80 @@ def save_config():
             os.remove(tmp)
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Iniciar com o Windows
+# ---------------------------------------------------------------------------
+# Per-user Run key: no admin rights, no UAC prompt, no scheduled task. The
+# entry simply names this executable, so an uninstall that removes the exe
+# leaves a dead entry rather than breaking anything.
+AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+AUTOSTART_VALUE = APP_NAME
+
+
+def autostart_supported():
+    # Only meaningful for the packaged app. Running from source, sys.executable
+    # is python.exe — registering THAT would launch a bare interpreter at every
+    # boot and would break the moment the source tree moved.
+    return bool(getattr(sys, "frozen", False))
+
+
+def autostart_command():
+    return f'"{sys.executable}"'
+
+
+def is_autostart_enabled():
+    # Reads the real registry rather than a value mirrored in config.json, so
+    # the checkbox can never claim "on" while Windows disagrees.
+    if not autostart_supported():
+        return False
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, AUTOSTART_VALUE)
+        return bool(value)
+    except FileNotFoundError:
+        return False
+    except OSError as e:
+        log(f"aviso: não foi possível ler a chave de inicialização: {e}")
+        return False
+
+
+def set_autostart(enabled):
+    """Turns autostart on or off. Returns None on success, or an error string.
+
+    Reads the value back after writing and fails loudly if it doesn't match.
+    This exists because of a real incident: the setting was believed to be
+    saved while the Run key was in fact empty, and nothing in the app
+    contradicted that belief.
+    """
+    if not autostart_supported():
+        return "disponível apenas no aplicativo instalado"
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, AUTOSTART_KEY, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            if enabled:
+                winreg.SetValueEx(
+                    key, AUTOSTART_VALUE, 0, winreg.REG_SZ, autostart_command()
+                )
+            else:
+                try:
+                    winreg.DeleteValue(key, AUTOSTART_VALUE)
+                except FileNotFoundError:
+                    pass  # already off
+    except OSError as e:
+        erro = f"{type(e).__name__}: {e}"
+        log(f"ERRO ao gravar a inicialização automática: {erro}")
+        return erro
+
+    if is_autostart_enabled() != bool(enabled):
+        erro = "a gravação não teve efeito (o registro não confirmou o valor)"
+        log(f"ERRO ao gravar a inicialização automática: {erro}")
+        return erro
+
+    log(f"iniciar com o Windows: {'ligado' if enabled else 'desligado'}")
+    return None
 
 
 def percent_to_ms(percent):
@@ -1248,6 +1397,16 @@ class SettingsDialog(QDialog):
             lambda v: self.fx2_brightness_label.setText(str(v))
         )
 
+        # Checked straight from the registry, never from config.json — the
+        # box has to reflect what Windows will actually do, not what the app
+        # believes. Disabled when running from source, where registering
+        # python.exe would be wrong.
+        self.autostart_check = QCheckBox(tr("autostart_label"))
+        self.autostart_check.setChecked(is_autostart_enabled())
+        if not autostart_supported():
+            self.autostart_check.setEnabled(False)
+            self.autostart_check.setToolTip(tr("autostart_source_only"))
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -1264,6 +1423,7 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(QLabel(tr("language_label")))
         layout.addWidget(self.language_box)
+        layout.addWidget(self.autostart_check)
         layout.addWidget(buttons)
         self.setLayout(layout)
 
@@ -1456,16 +1616,27 @@ def on_button_clicked(idx):
 
 def on_settings_clicked():
     dialog = SettingsDialog()
-    if dialog.exec():
-        config["settings"]["2fx_timeout_seconds"] = dialog.timeout_spin.value()
-        two_fx_state.timeout_seconds = dialog.timeout_spin.value()
-        config["settings"]["language"] = dialog.language_box.currentData()
-        config["settings"]["fx2_brightness"] = dialog.fx2_brightness_slider.value()
-        save_config()
-        refresh_static_ui()
-        print("Settings saved")
-    else:
-        print("Settings cancelled")
+    if not dialog.exec():
+        log("configurações: cancelado")
+        return
+
+    config["settings"]["2fx_timeout_seconds"] = dialog.timeout_spin.value()
+    two_fx_state.timeout_seconds = dialog.timeout_spin.value()
+    config["settings"]["language"] = dialog.language_box.currentData()
+    config["settings"]["fx2_brightness"] = dialog.fx2_brightness_slider.value()
+    save_config()
+
+    # Autostart lives in the registry, not in config.json, so it is applied
+    # separately — and only when it actually changed, to avoid rewriting the
+    # Run key on every OK. A failure is reported instead of being swallowed.
+    if autostart_supported():
+        desejado = dialog.autostart_check.isChecked()
+        if desejado != is_autostart_enabled():
+            erro = set_autostart(desejado)
+            if erro:
+                warn_user(tr("autostart_failed", error=erro))
+
+    refresh_static_ui()
 
 
 def on_help_clicked():
@@ -1661,4 +1832,11 @@ def refresh_static_ui():
     refresh_button_labels()
 
 window.show()
+
+# Checked only now, with a window on screen, so the warning has somewhere to
+# appear. Catches the "nothing is being persisted" case at the moment it
+# happens instead of days later, when the user notices settings reverting.
+report_startup_problems()
+log(f"iniciar com o Windows: {'ligado' if is_autostart_enabled() else 'desligado'}")
+
 sys.exit(app.exec())
