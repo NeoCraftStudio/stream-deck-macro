@@ -674,8 +674,9 @@ boot, com início automático ligado`), so the behaviour can never again be a
 mystery.
 
 Verified on the installed build: with `--tray`, no window and the flag reason
-logged; without it at 699 s of uptime, the window is visible. The third path
-(no flag, inside the 120 s window) can only be verified by an actual reboot.
+logged; without it at 699 s of uptime, the window is visible. **The third path
+(a real boot) was confirmed working by the user on 2026-10-06** — the app came
+up in the tray with no window. All three paths are now verified on hardware.
 
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
