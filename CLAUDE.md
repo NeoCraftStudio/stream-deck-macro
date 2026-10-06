@@ -639,6 +639,44 @@ Verified on the installed build, both paths: launched with `--tray` the
 process has `MainWindowHandle=0` (no window); launched normally the window is
 visible with the right title. Both connect to the pad.
 
+### v4.2.0 (2026-10-06) — the `--tray` flag alone was not enough
+
+v4.1.0 decided tray-vs-window purely from `--tray` on the command line. On the
+first real boot after it shipped, **the app came up with a window anyway**.
+
+What the evidence showed, and it ruled out the obvious suspects:
+- The Run key was correct: `"<exe>" --tray`, verified byte for byte.
+- The Startup folder was empty; no scheduled task existed; the Run entry was
+  not disabled in StartupApproved.
+- The surviving process had been started by **explorer.exe at boot + 41 s**
+  with **no flag at all**, and only one process existed.
+- That process never wrote a startup line to `app.log` — yet relaunching the
+  same binary by hand logged normally, so logging itself was fine.
+
+Windows restores apps that were running at shutdown, reusing their *previous*
+command line. An app that lives permanently in the tray is therefore always a
+candidate to be relaunched at logon with a stale command line, at which point
+the flag silently stops meaning anything. **The root cause of that specific
+boot was never fully established** — the missing log line is still
+unexplained — so the fix deliberately does not depend on knowing it.
+
+`should_start_in_tray()` now uses two independent signals:
+1. `--tray` present → tray. Explicit, and still what the Run key writes.
+2. Otherwise, if autostart is enabled **and** the process started within
+   `LOGON_WINDOW_S` (120 s) of boot → tray. Uptime comes from
+   `GetTickCount64()` via ctypes: stdlib, no dependency, immune to clock
+   changes.
+
+The cost is that opening the app by hand in the first two minutes after
+booting also goes to the tray. That is the accepted trade: **the reason is
+always written to the log** (`motivo: flag --tray` or `motivo: 41s após o
+boot, com início automático ligado`), so the behaviour can never again be a
+mystery.
+
+Verified on the installed build: with `--tray`, no window and the flag reason
+logged; without it at 699 s of uptime, the window is visible. The third path
+(no flag, inside the 120 s window) can only be verified by an actual reboot.
+
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
   `ENC:2:CW`, `ENC:2:PUSH`). The app decides actions.

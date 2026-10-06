@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "4.1.0"
+APP_VERSION = "4.2.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -399,7 +399,41 @@ AUTOSTART_VALUE = APP_NAME
 # before — the distinction is the command line, not a stored setting, so the
 # two cases can't get out of sync.
 TRAY_FLAG = "--tray"
-START_IN_TRAY = TRAY_FLAG in sys.argv[1:]
+
+# How soon after boot a launch is still treated as "Windows started me".
+LOGON_WINDOW_S = 120
+
+
+def seconds_since_boot():
+    # GetTickCount64 returns milliseconds since the system started. Stdlib
+    # ctypes, no extra dependency, and unaffected by clock changes.
+    return ctypes.windll.kernel32.GetTickCount64() / 1000.0
+
+
+def should_start_in_tray():
+    """Decides whether this launch comes up as a tray icon with no window.
+
+    Two independent signals, because the flag alone proved unreliable. On
+    2026-10-06 the app came up with a window at boot even though the Run key
+    correctly held `--tray`: the surviving process had been started by
+    explorer.exe WITHOUT the flag, 41 s after boot. Windows restores apps that
+    were running at shutdown using their *previous* command line, so an app
+    that lives in the tray permanently can be relaunched at logon with a stale
+    one — and the flag silently stops meaning anything.
+
+    So: the flag still wins when present, and otherwise a launch that happens
+    within LOGON_WINDOW_S of boot *while autostart is enabled* is treated as a
+    boot launch too. The cost of the heuristic is that opening the app by hand
+    in the first two minutes after booting also goes to the tray; the reason is
+    always written to the log, so it can never become a mystery.
+    """
+    if TRAY_FLAG in sys.argv[1:]:
+        return True, f"flag {TRAY_FLAG}"
+    if autostart_supported() and is_autostart_enabled():
+        desde = seconds_since_boot()
+        if desde < LOGON_WINDOW_S:
+            return True, f"{desde:.0f}s após o boot, com início automático ligado"
+    return False, ""
 
 
 def autostart_supported():
@@ -1861,8 +1895,9 @@ def refresh_static_ui():
 # because setQuitOnLastWindowClosed(False) is already set and the tray icon is
 # live by this point — the app keeps running with nothing on screen, and a
 # click on the tray icon opens the window.
-if START_IN_TRAY:
-    log("iniciado em modo bandeja (--tray), sem janela")
+_tray, _motivo = should_start_in_tray()
+if _tray:
+    log(f"iniciado em modo bandeja, sem janela — motivo: {_motivo}")
 else:
     window.show()
 
