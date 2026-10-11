@@ -95,7 +95,20 @@ teaching over speed.
   crystal marking). No level shifter needed for the WS2812B LEDs — both run
   on 5V logic.
 - 4x4 button matrix (16 positions = 15 buttons + 1 "2FX" key), 1N4148 diode
-  per position, cathode toward the column (standard anti-ghosting).
+  per position for anti-ghosting. **Cathode toward the ROW, anode toward the
+  COLUMN** — this corrects a long-standing error in this file, which said
+  "cathode toward the column" until 2026-10-11.
+  Derived from the firmware, not from a diagram: `scanMatrix()` sets the rows
+  `OUTPUT` and drives the active one `LOW`, while the columns are
+  `INPUT_PULLUP` and read `LOW` when pressed. So the column sits at 5 V and
+  the row is pulled to 0 V, and current flows **column → switch → row**. A
+  diode only conducts anode → cathode, so the anode has to be on the column
+  side. Wired the way this file used to say, the diode would block that
+  current and **no key would ever register**.
+  This is the standard COL2ROW arrangement (driven rows, read columns).
+  If diodes are already installed on the protoboard build, check one before
+  trusting either text — the bench build may have been tested without diodes
+  at all, since ghosting only shows up with 3+ simultaneous presses.
 - 3 incremental rotary encoders (KY-040/EC11) with push-button; each click =
   real mute (not zero-volume) of its associated audio channel.
 - Individually addressable WS2812B-family LEDs, 1 per key, single chain on 1
