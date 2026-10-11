@@ -34,7 +34,13 @@ bool hostConnected = true;
 
 // ---- LEDs ----
 #define LED_PIN 16
-#define NUM_LEDS 9   // set to however many you have wired right now
+// Number of LEDs actually wired on THIS unit. Everything downstream scales
+// off it (the rainbow spreads its hue range across NUM_LEDS, every effect
+// loops to it), so this is the only place it needs changing.
+// Currently 5: a cut section of strip, confirmed by the user on 2026-10-11.
+// A full build is one LED per key (16) — but do not "fix" this to 16 without
+// the hardware to match, or eleven of them will simply never light.
+#define NUM_LEDS 5
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
