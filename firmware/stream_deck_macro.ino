@@ -8,8 +8,23 @@
 #define DEVICE_ID "ID:NEOCRAFT_MACRO_DESK:v1"
 
 // ---- Button matrix ----
-const int rowPins[4] = {3, 4, 5, 6};
-const int colPins[4] = {7, 8, 9, 10};
+// Named by ELECTRICAL ROLE, not "row"/"column", because on the real build the
+// bus carrying the diode cathodes turned out to be the pad's column, not its
+// row. There is no canonical assignment — the firmware has to match the
+// hardware, and renaming these made that impossible to get backwards again.
+//
+// drivePins idle HIGH and are pulled LOW one at a time. readPins sit on the
+// internal pull-ups. Current runs readPin (5 V) -> switch -> diode anode ->
+// cathode -> drivePin (0 V), which is the only direction a diode conducts.
+// Wired the other way round the diode is reverse-biased and ALL 16 keys stay
+// silent — not scrambled, silent. That was the real fault on 2026-10-11:
+// the bare (cathode) bus had been landed on D7-D10, which the firmware holds
+// at 5 V, so nothing could ever conduct.
+// Which axis each bus physically selects was established by measurement, not
+// by reading the wiring: pressing left-to-right across the pad changes the
+// READ index, pressing top-to-bottom changes the DRIVEN one.
+const int drivePins[4] = {7, 8, 9, 10};  // pad ROWS — bare wire, diode cathode
+const int readPins[4]  = {3, 4, 5, 6};   // pad COLUMNS — green wire, no diode
 bool btnState[16] = {false};
 unsigned long lastChangeTime[16] = {0};
 const unsigned long DEBOUNCE_MS = 30;
@@ -76,11 +91,11 @@ void setup() {
   lastHostContact = millis();
 
   for (int i = 0; i < 4; i++) {
-    pinMode(rowPins[i], OUTPUT);
-    digitalWrite(rowPins[i], HIGH);
+    pinMode(drivePins[i], OUTPUT);
+    digitalWrite(drivePins[i], HIGH);
   }
   for (int i = 0; i < 4; i++) {
-    pinMode(colPins[i], INPUT_PULLUP);
+    pinMode(readPins[i], INPUT_PULLUP);
   }
 
   pinMode(ENC1_CLK, INPUT_PULLUP);
@@ -120,11 +135,16 @@ void checkHostConnection() {
 }
 
 void scanMatrix() {
-  for (int r = 0; r < 4; r++) {
-    digitalWrite(rowPins[r], LOW);
-    for (int c = 0; c < 4; c++) {
-      int idx = r * 4 + c;
-      bool pressed = (digitalRead(colPins[c]) == LOW);
+  for (int row = 0; row < 4; row++) {
+    digitalWrite(drivePins[row], LOW);
+    for (int col = 0; col < 4; col++) {
+      // Row-major, so BTN:n runs left-to-right then top-to-bottom and matches
+      // the grid the app draws. Measured on hardware: the first firmware fix
+      // swapped the pin arrays AND flipped this index, which was one change
+      // too many — the pad came out transposed (right went 0,4,8,12 instead
+      // of 0,1,2,3). Swapping the arrays alone is the whole correction.
+      int idx = row * 4 + col;
+      bool pressed = (digitalRead(readPins[col]) == LOW);
       if (pressed != btnState[idx] && (millis() - lastChangeTime[idx]) > DEBOUNCE_MS) {
         btnState[idx] = pressed;
         lastChangeTime[idx] = millis();
@@ -133,7 +153,7 @@ void scanMatrix() {
         Serial.println(pressed ? ":DOWN" : ":UP");
       }
     }
-    digitalWrite(rowPins[r], HIGH);
+    digitalWrite(drivePins[row], HIGH);
   }
 }
 

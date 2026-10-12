@@ -6,20 +6,28 @@ this file ever disagree, the firmware wins and this file is the bug.
 
 ## Button matrix
 
-`rowPins[4] = {3, 4, 5, 6}` are `OUTPUT`, idle `HIGH`, pulled `LOW` one at a
-time during the scan. `colPins[4] = {7, 8, 9, 10}` are `INPUT_PULLUP` and read
-`LOW` when a key on the active row is pressed.
+The firmware names these by **electrical role**, not "row"/"column", because
+on the real build the two buses landed the opposite way round from what this
+file originally assumed. There is no canonical assignment — the firmware has
+to match the hardware.
 
-| matrix | pin |
-| --- | --- |
-| row 0 | `D3` |
-| row 1 | `D4` |
-| row 2 | `D5` |
-| row 3 | `D6` |
-| column 0 | `D7` |
-| column 1 | `D8` |
-| column 2 | `D9` |
-| column 3 | `D10` |
+`drivePins[4] = {7, 8, 9, 10}` are `OUTPUT`, idle `HIGH`, pulled `LOW` one at
+a time during the scan. `readPins[4] = {3, 4, 5, 6}` are `INPUT_PULLUP` and
+read `LOW` when a key on the active row is pressed.
+
+| matrix | pin | wire on the pad |
+| --- | --- | --- |
+| row 0 (driven) | `D7` | bare bus, diode **cathode** |
+| row 1 | `D8` | bare bus |
+| row 2 | `D9` | bare bus |
+| row 3 | `D10` | bare bus |
+| column 0 (read) | `D3` | green, no diode |
+| column 1 | `D4` | green |
+| column 2 | `D5` | green |
+| column 3 | `D6` | green |
+
+**Verified on hardware 2026-10-11**: pressing all sixteen keys left-to-right,
+top-to-bottom produced `BTN:0` through `BTN:15` in exact order.
 
 **The matrix uses no GND.** Rows drive, columns read through the internal
 pull-ups, and each switch bridges a row and a column through its diode. All
@@ -40,13 +48,24 @@ app. Wire them in this order or the grid comes out scrambled:
 
 ### Diode orientation
 
-**Anode on the column, cathode on the row** — the 1N4148's painted band faces
-the row. This is the standard COL2ROW arrangement.
+**The diode cathode (painted band) goes to the DRIVEN bus** — the one on
+`D7`–`D10`. The anode side reaches the switch, whose other pin goes to a read
+pin on `D3`–`D6`.
 
-The reason, so it can be re-derived instead of trusted: the column sits at 5 V
-through its internal pull-up and the active row is driven to 0 V, so current
-flows **column → switch → row**. A diode only conducts anode → cathode.
-Reversed, it blocks that current and no key ever registers.
+The reason, so it can be re-derived instead of trusted: a read pin sits at 5 V
+through its internal pull-up and the active driven pin is held at 0 V, so
+current flows **read pin → switch → diode anode → cathode → driven pin**. A
+diode only conducts anode → cathode.
+
+**This is the failure that actually happened on 2026-10-11.** The bare bus
+carrying the cathodes was landed on the pins the firmware holds at 5 V, which
+reverse-biases every diode. The symptom is distinctive and worth recognising:
+**all sixteen keys silent — not scrambled, silent.** Scrambled indices mean a
+swap somewhere; total silence means nothing can conduct at all.
+
+The fix was two lines of firmware (swapping the pin arrays), not unsoldering
+sixteen diodes. The diodes were correct the whole time relative to the
+switches; only the bus-to-pin assignment was reversed.
 
 ## Physical layout on the board
 
@@ -70,15 +89,15 @@ plus one jumper across covers the whole matrix.
 | **`D8` — column 1** | `D16` — LED data |
 | **`D9` — column 2** | **`D10` — column 3** |
 
-> ⚠ **The physical order above is the common SparkFun layout and was NOT
-> confirmed against a primary source** — SparkFun publishes the pinout only as
-> an image. Confirm it against the silkscreen on the actual board before
-> soldering. Note also that **the `D14` silkscreen label changed between board
-> revisions**, which matters for ENC3 later.
+> **Confirmed on the real board, 2026-10-11.** This order was originally
+> written from the commonly published SparkFun layout without a primary
+> source — SparkFun ships the pinout only as an image — and was marked
+> unverified. It has since been checked against the silkscreen of the actual
+> board and photographed: the top edge reads `RAW GND RST VCC A3 A2 …` and the
+> bottom edge `TXO RXI GND GND 2 3 …`, exactly as above.
 >
-> The *logical* assignment (which pin does what) is solid: it comes straight
-> from the firmware. Only the left/right and top/bottom ordering is the
-> unverified part.
+> Still worth knowing: **the `D14` silkscreen label changed between board
+> revisions**, which will matter when ENC3 is wired.
 
 ## What not to encroach on
 
