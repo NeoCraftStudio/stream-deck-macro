@@ -1,0 +1,19 @@
+﻿SOM NO MICROFONE (opcional)
+
+Para que o som de uma tecla saia junto com a sua voz no Discord ou num jogo,
+o Windows precisa de um cabo de áudio virtual. Ele é gratuito e você instala
+uma única vez.
+
+O NeoCraft Macro Desk faz o resto sozinho: detecta o cabo, mistura o som com
+o seu microfone e se configura. Do seu lado, basta escolher o cabo como
+microfone no Discord.
+
+Baixe o VB-CABLE em:
+  https://vb-audio.com/Cable/
+
+Por que não vem embutido neste instalador: o VB-CABLE é de outra empresa, e
+redistribuir o programa dela exige licença paga. Linkar é livre -- e assim
+você baixa direto da fonte oficial, sem intermediário.
+
+Sem isso, todo o resto do programa funciona normalmente. Apenas o envio de
+som ao microfone fica indisponível.

@@ -34,12 +34,15 @@ if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
 
 import time
 import json
+import threading
+import collections
 import math
 import tempfile
 import winreg
 import colorsys
 import serial
 import serial.tools.list_ports
+import numpy as np
 import sounddevice as sd
 import soundfile as sf
 import pyautogui
@@ -59,7 +62,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "4.3.0"
+APP_VERSION = "4.4.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -122,6 +125,13 @@ DEFAULT_CONFIG = {
         "led_color": [255, 0, 0],
         "language": "pt",
         "fx2_brightness": 50,
+        # Devices are stored by NAME, not by index: PortAudio indices are
+        # assigned per process and shift whenever a device is plugged, removed
+        # or disabled, so a saved index silently starts pointing at the wrong
+        # hardware. An empty string means "not chosen yet".
+        "mic_mix_enabled": False,
+        "mic_device": "",
+        "mic_mix_output_device": "",
     },
     "buttons": {},
     "encoders": {},
@@ -212,6 +222,40 @@ def warn_user(message):
     ctypes.windll.user32.MessageBoxW(None, message, APP_NAME, 0x30)  # MB_ICONWARNING
 
 
+def fill_missing_defaults(loaded):
+    """Add keys that DEFAULT_CONFIG has and the loaded config lacks.
+
+    A config written by an older version is missing every setting added
+    since, and the app then reads a key that is not there. Until now each new
+    setting had to remember to use .get() with a default - and the first one
+    that forgot would crash on exactly the installs that had been upgraded,
+    never on a fresh one, which is the worst possible place for that bug to
+    hide.
+
+    Only ABSENT keys are filled. An existing value is never touched, however
+    odd it looks, because it is the user's. Keys the defaults no longer
+    mention (led_speed_ms, from v2) are left alone too: deleting data on load
+    is how settings get silently lost, and an unused key costs nothing.
+    """
+    mudou = []
+    for secao, padrao in DEFAULT_CONFIG.items():
+        if secao not in loaded:
+            loaded[secao] = json.loads(json.dumps(padrao))
+            mudou.append(secao)
+            continue
+        if not isinstance(padrao, dict) or not isinstance(loaded[secao], dict):
+            continue
+        for chave, valor in padrao.items():
+            if chave not in loaded[secao]:
+                loaded[secao][chave] = json.loads(json.dumps(valor))
+                mudou.append(f"{secao}.{chave}")
+    if mudou:
+        # Logged because a config quietly gaining keys is worth being able to
+        # see after the fact, when wondering where a setting came from.
+        log(f"config: chaves ausentes preenchidas com o padrao: {', '.join(mudou)}")
+    return loaded
+
+
 def load_config():
     # Never silently start from defaults when a config file is present but
     # unreadable — that's how real data gets destroyed: the app comes up
@@ -226,6 +270,7 @@ def load_config():
             loaded = json.load(f)
         if not isinstance(loaded, dict) or "buttons" not in loaded:
             raise ValueError("estrutura inesperada no config.json")
+        fill_missing_defaults(loaded)
         return loaded
     except Exception as e:
         backup = CONFIG_PATH + time.strftime(".corrompido-%Y%m%d-%H%M%S")
@@ -315,6 +360,31 @@ TR = {
         "pt": "Brilho do indicador 2FX:",
     },
     "color_settings_title": {"en": "Color Settings", "pt": "Configurações de Cor"},
+    "btn_apply": {"en": "Apply", "pt": "Aplicar"},
+    "mic_mix_group": {
+        "en": "Sound into the microphone",
+        "pt": "Som no microfone",
+    },
+    "mic_mix_enable": {
+        "en": "Send key sounds into my microphone",
+        "pt": "Enviar o som das teclas para o meu microfone",
+    },
+    "mic_device_label": {"en": "Your microphone", "pt": "Seu microfone"},
+    "mic_mix_output_label": {
+        "en": "Virtual cable (point Discord at this)",
+        "pt": "Cabo virtual (aponte o Discord para ele)",
+    },
+    "mic_mix_hint": {
+        "en": "Needs a free virtual audio cable, such as VB-CABLE. "
+              "Without one, everything else still works.",
+        "pt": "Precisa de um cabo de áudio virtual gratuito, como o VB-CABLE. "
+              "Sem ele, todo o resto continua funcionando.",
+    },
+    "mic_mix_failed": {
+        "en": "Could not start the microphone mixer: {error}",
+        "pt": "Não foi possível iniciar o mixer de microfone: {error}",
+    },
+    "none_selected": {"en": "(none)", "pt": "(nenhum)"},
     "pattern_label": {"en": "Pattern:", "pt": "Padrão:"},
     "pattern_solid": {"en": "Solid Color", "pt": "Cor Sólida"},
     "pattern_breathing": {"en": "Breathing", "pt": "Respiração"},
@@ -605,6 +675,11 @@ def execute_action(action):
             if volume != 1.0:
                 data = data * volume
             sd.play(data, samplerate)
+            # Both, deliberately: sd.play() is the local monitor, without
+            # which you cannot hear what you just triggered, and feed_sound()
+            # is what puts it into the microphone signal for everyone else.
+            # feed_sound is a no-op when the mixer is off.
+            mic_mixer.feed_sound(data, samplerate)
             print(f"Playing sound: {value}")
         except Exception as e:
             print(f"Sound playback failed: {e}")
@@ -641,6 +716,281 @@ def toggle_system_mute():
     muted = vol.GetMute()
     vol.SetMute(0 if muted else 1, None)
     print(f"System {'unmuted' if muted else 'muted'}")
+
+
+# ---- Sound into the microphone ----
+#
+# Windows gives a program no way to inject audio into ANOTHER program's
+# microphone stream. The only supported routes are a virtual audio driver or
+# an APO loaded into the protected audiodg.exe process, and both need a
+# Microsoft signature. So this takes the one route that needs neither: read
+# the real microphone, add whatever the pad is playing, and write the result
+# to a second output device - a virtual audio cable. Discord (or a game) is
+# pointed at that cable instead of at the microphone, and hears both.
+#
+# Everything here is inert until the user picks both devices, so an install
+# without a virtual cable behaves exactly as it did before.
+
+MIX_SAMPLERATE = 48000
+MIX_CHANNELS = 2
+# 10 ms. Small enough that nobody notices the delay on their own voice, large
+# enough that Python's per-callback overhead is not the bottleneck.
+MIX_BLOCK = 480
+# ~120 ms of slack between the two streams. The microphone and the cable are
+# separate devices with separate clocks, and that drift has to land
+# somewhere; this is where.
+MIC_QUEUE_MAX_BLOCKS = 12
+
+
+def audio_device_names(kind):
+    """Device names for a combo box, one entry per name.
+
+    PortAudio lists the same physical device once per host API (MME,
+    DirectSound, WASAPI, WDM-KS), which would show every microphone four
+    times over. Collapsing by name keeps the list readable; resolving a name
+    back to an index is find_audio_device's job.
+    """
+    chave = "max_input_channels" if kind == "input" else "max_output_channels"
+    nomes = []
+    try:
+        dispositivos = sd.query_devices()
+    except Exception as e:
+        log(f"audio: nao foi possivel listar dispositivos - {e}")
+        return nomes
+    for d in dispositivos:
+        if d[chave] <= 0:
+            continue
+        if d["name"] not in nomes:
+            nomes.append(d["name"])
+    return nomes
+
+
+def find_audio_device(name, kind):
+    """Resolve a saved device NAME back to a PortAudio index, or None.
+
+    Prefers the WASAPI entry: it is the modern Windows path, the lowest
+    latency of the four host APIs, and the one that reports a device's real
+    channel count reliably.
+    """
+    if not name:
+        return None
+    chave = "max_input_channels" if kind == "input" else "max_output_channels"
+    reserva = None
+    try:
+        dispositivos = sd.query_devices()
+    except Exception as e:
+        log(f"audio: nao foi possivel listar dispositivos - {e}")
+        return None
+    for i, d in enumerate(dispositivos):
+        if d[chave] <= 0 or d["name"] != name:
+            continue
+        try:
+            api = sd.query_hostapis(d["hostapi"])["name"]
+        except Exception:
+            api = ""
+        if api == "Windows WASAPI":
+            return i
+        if reserva is None:
+            reserva = i
+    return reserva
+
+
+def to_mix_shape(data):
+    """Coerce any decoded audio into float32, MIX_CHANNELS wide."""
+    arr = np.asarray(data, dtype=np.float32)
+    if arr.ndim == 1:
+        arr = arr[:, None]
+    if arr.shape[1] == MIX_CHANNELS:
+        return arr
+    if arr.shape[1] == 1:
+        # Mono to stereo is the same signal on both sides, NOT half the
+        # energy per side: a mono clip must not come out quieter than a
+        # stereo one.
+        return np.repeat(arr, MIX_CHANNELS, axis=1)
+    return arr[:, :MIX_CHANNELS]
+
+
+def resample_linear(data, src_rate, dst_rate):
+    """Linear resample to the mix rate.
+
+    Linear interpolation aliases above roughly half the output rate, which a
+    real resampler would filter out. Kept anyway: the alternative is another
+    binary dependency inside a frozen build, and the material is soundboard
+    clips heading down a voice codec that discards far more than this adds.
+    """
+    if src_rate == dst_rate or len(data) == 0:
+        return data
+    n_out = int(round(len(data) * dst_rate / float(src_rate)))
+    if n_out <= 0:
+        return data[:0]
+    x_antigo = np.arange(len(data), dtype=np.float64)
+    x_novo = np.linspace(0.0, len(data) - 1.0, num=n_out)
+    colunas = [np.interp(x_novo, x_antigo, data[:, c]) for c in range(data.shape[1])]
+    return np.stack(colunas, axis=1).astype(np.float32)
+
+
+class MicMixer:
+    def __init__(self):
+        self._input_stream = None
+        self._output_stream = None
+        # A deque of 10 ms blocks. append and popleft are the only operations
+        # the callbacks perform and both are atomic in CPython, so the audio
+        # path takes no lock - a lock there can stall the callback and cause
+        # exactly the dropout it was meant to avoid.
+        self._mic_blocks = collections.deque()
+        # Sounds being mixed, as [buffer, position]. This one IS locked: the
+        # list is mutated from the GUI thread whenever a key is pressed.
+        self._sounds = []
+        self._sounds_lock = threading.Lock()
+        self.last_error = None
+        self.mic_name = None
+        self.output_name = None
+
+    def is_running(self):
+        return self._output_stream is not None
+
+    # -- audio callbacks: no logging, no avoidable allocation --
+
+    def _on_input(self, indata, frames, time_info, status):
+        if len(self._mic_blocks) >= MIC_QUEUE_MAX_BLOCKS:
+            # The cable is draining slower than the mic fills it, or its
+            # stream died. Drop the oldest block: latency that keeps climbing
+            # is worse than losing 10 ms once.
+            try:
+                self._mic_blocks.popleft()
+            except IndexError:
+                pass
+        self._mic_blocks.append(to_mix_shape(indata).copy())
+
+    def _take_mic(self, frames):
+        out = np.zeros((frames, MIX_CHANNELS), dtype=np.float32)
+        preenchido = 0
+        while preenchido < frames and self._mic_blocks:
+            bloco = self._mic_blocks[0]
+            pegar = min(frames - preenchido, len(bloco))
+            out[preenchido:preenchido + pegar] = bloco[:pegar]
+            if pegar == len(bloco):
+                self._mic_blocks.popleft()
+            else:
+                self._mic_blocks[0] = bloco[pegar:]
+            preenchido += pegar
+        # Running short means the mic stream has not delivered yet, so the
+        # rest stays silent. Never repeat old audio to fill a gap.
+        return out
+
+    def _on_output(self, outdata, frames, time_info, status):
+        bloco = self._take_mic(frames)
+        with self._sounds_lock:
+            restantes = []
+            for item in self._sounds:
+                buf, pos = item
+                trecho = buf[pos:pos + frames]
+                if len(trecho):
+                    bloco[:len(trecho)] += trecho
+                item[1] = pos + frames
+                if item[1] < len(buf):
+                    restantes.append(item)
+            self._sounds = restantes
+        # Clip: a voice plus a clip at full scale overflows, and overflow in
+        # float audio is audible as a hard crackle.
+        np.clip(bloco, -1.0, 1.0, out=bloco)
+        outdata[:] = bloco
+
+    # -- lifecycle --
+
+    def start(self):
+        self.stop()
+        self.last_error = None
+
+        if not config["settings"].get("mic_mix_enabled"):
+            return
+
+        mic_name = config["settings"].get("mic_device", "")
+        out_name = config["settings"].get("mic_mix_output_device", "")
+        if not mic_name or not out_name:
+            log("mixer de microfone: desligado, dispositivos nao escolhidos")
+            return
+
+        mic_idx = find_audio_device(mic_name, "input")
+        out_idx = find_audio_device(out_name, "output")
+        # A named device can simply be gone: an interface unplugged, a
+        # virtual cable uninstalled. Name which one, because "the mixer
+        # failed" is useless when either of two devices could be at fault.
+        if mic_idx is None:
+            self.last_error = f"microfone nao encontrado: {mic_name}"
+            log(f"mixer de microfone: {self.last_error}")
+            return
+        if out_idx is None:
+            self.last_error = f"saida virtual nao encontrada: {out_name}"
+            log(f"mixer de microfone: {self.last_error}")
+            return
+
+        try:
+            self._mic_blocks.clear()
+            with self._sounds_lock:
+                self._sounds = []
+            # Output first, because it is the consumer. Starting it second
+            # lets the queue fill to its cap before anything drains it, which
+            # shows up as a permanent 120 ms of extra delay on your own voice.
+            self._output_stream = sd.OutputStream(
+                device=out_idx,
+                samplerate=MIX_SAMPLERATE,
+                channels=MIX_CHANNELS,
+                dtype="float32",
+                blocksize=MIX_BLOCK,
+                callback=self._on_output,
+            )
+            self._output_stream.start()
+            self._input_stream = sd.InputStream(
+                device=mic_idx,
+                samplerate=MIX_SAMPLERATE,
+                channels=MIX_CHANNELS,
+                dtype="float32",
+                blocksize=MIX_BLOCK,
+                callback=self._on_input,
+            )
+            self._input_stream.start()
+        except Exception as e:
+            self.last_error = str(e)
+            log(f"mixer de microfone: falhou ao iniciar - {e}")
+            self.stop()
+            return
+
+        self.mic_name = mic_name
+        self.output_name = out_name
+        log(f"mixer de microfone: ligado - {mic_name} -> {out_name}")
+
+    def stop(self):
+        for atributo in ("_input_stream", "_output_stream"):
+            stream = getattr(self, atributo)
+            if stream is None:
+                continue
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                pass
+            setattr(self, atributo, None)
+        self._mic_blocks.clear()
+        with self._sounds_lock:
+            self._sounds = []
+
+    def feed_sound(self, data, samplerate):
+        """Queue a decoded sound to be mixed into the microphone signal."""
+        if not self.is_running():
+            return
+        try:
+            buf = resample_linear(to_mix_shape(data), samplerate, MIX_SAMPLERATE)
+        except Exception as e:
+            log(f"mixer de microfone: nao foi possivel preparar o som - {e}")
+            return
+        if len(buf) == 0:
+            return
+        with self._sounds_lock:
+            self._sounds.append([buf, 0])
+
+
+mic_mixer = MicMixer()
 
 
 def get_app_sessions(process_name):
@@ -1493,6 +1843,33 @@ class SettingsDialog(QDialog):
             self.autostart_check.setEnabled(False)
             self.autostart_check.setToolTip(tr("autostart_source_only"))
 
+        # Device lists are built when the dialog opens, never cached: a
+        # virtual cable installed while the app was running has to appear
+        # without a restart.
+        self.mic_mix_check = QCheckBox(tr("mic_mix_enable"))
+        self.mic_mix_check.setChecked(
+            bool(config["settings"].get("mic_mix_enabled", False))
+        )
+
+        self.mic_box = QComboBox()
+        self.mic_box.addItem(tr("none_selected"), "")
+        for nome in audio_device_names("input"):
+            self.mic_box.addItem(nome, nome)
+        indice = self.mic_box.findData(config["settings"].get("mic_device", ""))
+        self.mic_box.setCurrentIndex(indice if indice >= 0 else 0)
+
+        self.mic_out_box = QComboBox()
+        self.mic_out_box.addItem(tr("none_selected"), "")
+        for nome in audio_device_names("output"):
+            self.mic_out_box.addItem(nome, nome)
+        indice = self.mic_out_box.findData(
+            config["settings"].get("mic_mix_output_device", "")
+        )
+        self.mic_out_box.setCurrentIndex(indice if indice >= 0 else 0)
+
+        self.mic_hint = QLabel(tr("mic_mix_hint"))
+        self.mic_hint.setWordWrap(True)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -1510,6 +1887,15 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel(tr("language_label")))
         layout.addWidget(self.language_box)
         layout.addWidget(self.autostart_check)
+
+        layout.addWidget(QLabel(tr("mic_mix_group")))
+        layout.addWidget(self.mic_mix_check)
+        layout.addWidget(QLabel(tr("mic_device_label")))
+        layout.addWidget(self.mic_box)
+        layout.addWidget(QLabel(tr("mic_mix_output_label")))
+        layout.addWidget(self.mic_out_box)
+        layout.addWidget(self.mic_hint)
+
         layout.addWidget(buttons)
         self.setLayout(layout)
 
@@ -1568,13 +1954,30 @@ class ColorSettingsDialog(QDialog):
         layout.addWidget(QLabel(tr("speed_label")))
         layout.addLayout(speed_row)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        # Apply sits alongside OK and Cancel so the pattern can be judged on
+        # the real LEDs without closing the dialog - picking a colour blind
+        # and reopening to check it was the annoying part.
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel
+        )
+        apply_button = buttons.button(QDialogButtonBox.Apply)
+        # Qt supplies its own text for standard buttons, but this project
+        # hand-rolls i18n (see TR), so set it explicitly or it ignores the
+        # chosen language.
+        apply_button.setText(tr("btn_apply"))
+        apply_button.clicked.connect(self.apply_now)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.setLayout(layout)
 
         self.on_pattern_changed()
+
+    def apply_now(self):
+        # Deliberately the SAME code path OK takes - see
+        # apply_color_settings(). Two copies of "write config, push to the
+        # board, redraw" would drift apart the first time either changes.
+        apply_color_settings(self)
 
     def on_pattern_changed(self, _index=None):
         needs_color = self.pattern_box.currentData() in ("solid", "breathing")
@@ -1710,7 +2113,17 @@ def on_settings_clicked():
     two_fx_state.timeout_seconds = dialog.timeout_spin.value()
     config["settings"]["language"] = dialog.language_box.currentData()
     config["settings"]["fx2_brightness"] = dialog.fx2_brightness_slider.value()
+    config["settings"]["mic_mix_enabled"] = dialog.mic_mix_check.isChecked()
+    config["settings"]["mic_device"] = dialog.mic_box.currentData()
+    config["settings"]["mic_mix_output_device"] = dialog.mic_out_box.currentData()
     save_config()
+
+    # Restarted rather than reconfigured: PortAudio streams are bound to a
+    # device at construction, so a device change means new streams either
+    # way. start() is a no-op when the feature is off.
+    mic_mixer.start()
+    if config["settings"]["mic_mix_enabled"] and mic_mixer.last_error:
+        warn_user(tr("mic_mix_failed", error=mic_mixer.last_error))
 
     # Autostart lives in the registry, not in config.json, so it is applied
     # separately — and only when it actually changed, to avoid rewriting the
@@ -1729,22 +2142,31 @@ def on_help_clicked():
     HelpDialog().exec()
 
 
+def apply_color_settings(dialog):
+    # Shared by OK and by the Apply button, which is why it lives out here
+    # instead of inside on_color_settings_clicked().
+    config["settings"]["led_pattern"] = dialog.get_pattern_key()
+    config["settings"]["led_color"] = dialog.get_color()
+    config["settings"]["led_brightness"] = dialog.brightness_slider.value()
+    config["settings"]["led_speed_percent"] = dialog.speed_slider.value()
+
+    send_led_command(f"LED:BRIGHTNESS:{dialog.brightness_slider.value()}")
+    send_led_command(f"LED:SPEED:{percent_to_ms(dialog.speed_slider.value())}")
+
+    save_config()
+    if not two_fx_state.armed:
+        apply_idle_led_pattern()
+
+
 def on_color_settings_clicked():
     dialog = ColorSettingsDialog()
     if dialog.exec():
-        config["settings"]["led_pattern"] = dialog.get_pattern_key()
-        config["settings"]["led_color"] = dialog.get_color()
-        config["settings"]["led_brightness"] = dialog.brightness_slider.value()
-        config["settings"]["led_speed_percent"] = dialog.speed_slider.value()
-
-        send_led_command(f"LED:BRIGHTNESS:{dialog.brightness_slider.value()}")
-        send_led_command(f"LED:SPEED:{percent_to_ms(dialog.speed_slider.value())}")
-
-        save_config()
-        if not two_fx_state.armed:
-            apply_idle_led_pattern()
+        apply_color_settings(dialog)
         print("Color settings saved")
     else:
+        # Note that Cancel does not undo an earlier Apply - Apply commits, as
+        # it does everywhere else in Windows. Reverting would mean snapshotting
+        # the config on open and pushing the old state back to the board.
         print("Color settings cancelled")
 
 
@@ -1778,6 +2200,13 @@ def reset_leds_and_disconnect():
         apply_idle_led_pattern()
         if ser is not None:
             ser.close()
+    except Exception:
+        pass
+    # Separate try: an exception closing the serial port must not leave the
+    # audio streams open, and an open stream keeps the microphone marked as
+    # in-use in Windows after the app is gone.
+    try:
+        mic_mixer.stop()
     except Exception:
         pass
 
@@ -1937,5 +2366,11 @@ report_startup_problems()
 log(f"estado da inicialização automática: "
     f"{'ligada' if is_autostart_enabled() else 'desligada'}")
 sync_autostart_command()
+
+# Last, so a failure here is reported with the GUI already up and cannot stop
+# the pad itself from working. The whole feature is optional by design.
+mic_mixer.start()
+if config["settings"].get("mic_mix_enabled") and mic_mixer.last_error:
+    warn_user(tr("mic_mix_failed", error=mic_mixer.last_error))
 
 sys.exit(app.exec())
