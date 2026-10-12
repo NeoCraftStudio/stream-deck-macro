@@ -37,14 +37,44 @@ bool btnState[16] = {false};
 unsigned long lastChangeTime[16] = {0};
 const unsigned long DEBOUNCE_MS = 30;
 
-// ---- Encoder 1 ----
-const int ENC1_CLK = 0;   // D0 / RXI
-const int ENC1_DT  = A0;
-const int ENC1_SW  = A1;
-volatile int enc1Delta = 0;
-volatile int enc1LastCLK;
-volatile unsigned long enc1LastTime = 0;
-const unsigned long ENC_DEBOUNCE_US = 5000;
+// ---- Encoders ----
+// Three EC11s, numbered top-to-bottom as they sit on the deck (ENC1 at the
+// top), which is also the order app.py draws them in its encoder column.
+//
+// The pin map follows that physical order on purpose, so the board reads the
+// same way round as the deck: ENC1 takes the topmost pins on BOTH edges,
+// ENC3 the lowest. Reassigned on 2026-10-12 - ENC1 used to be on 0/A0/A1 -
+// after the wire colours were chosen. Nothing is lost by it: DT and SW are
+// plain reads with no timing requirement, so which of A0-A3/14/15 each one
+// gets is arbitrary, and all three CLK pins are interchangeable interrupt
+// pins (INT3, INT2, INT1). What IS gained is that each encoder's three-wire
+// ribbon segment lands as a contiguous, in-order group.
+//
+// Wire colours (a 10-way rainbow flat cut into three triples, each triple in
+// DT, CLK, SW order):
+//   ENC1  dt purple  clk gray   sw white
+//   ENC2  dt black   clk brown  sw red
+//   ENC3  dt orange  clk yellow sw green
+//   GND bus: blue (the one unused strand)
+// The MIDDLE wire of each triple is the CLK and is the one that crosses to
+// the left edge; the two outer wires land on adjacent pins down the right.
+//
+// CLK must be interrupt-driven: polled from loop() an encoder drops steps as
+// soon as the knob is turned quickly. On the ATmega32U4 only 0, 1, 2, 3 and
+// 7 can raise an external interrupt, and 3 and 7 are matrix pins - so these
+// three CLK pins are forced, not chosen.
+const int ENC_CLK[3] = {1, 0, 2};        // D1/TX0, D0/RXI, D2 - left edge
+const int ENC_DT[3]  = {A3, A1, 15};     // D15 is ENC3's dt
+const int ENC_SW[3]  = {A2, A0, 14};     // D14 is ENC3's sw
+volatile int encDelta[3] = {0, 0, 0};
+volatile uint8_t encLastCLK[3];
+volatile int8_t encPending[3] = {0, 0, 0};
+volatile unsigned long encLastTime[3] = {0, 0, 0};
+// Only long enough to collapse sub-millisecond contact chatter. The old
+// value was 5000 us, which is longer than the gap between the two CLK edges
+// of one detent on a fast turn - it threw away real steps. Bounce rejection
+// is now the decoder's job (see encTick), not a timer's.
+const unsigned long ENC_CHATTER_US = 1000;
 const unsigned long SW_DEBOUNCE_MS = 30;
 
 // ---- Host connection watchdog ----
@@ -76,23 +106,54 @@ uint32_t rainbowHue = 0;
 int breathePhase = 0;
 bool breatheIncreasing = true;
 
-void enc1ISR() {
+// Shared body for all three encoder interrupts. attachInterrupt() takes a
+// plain function pointer with no argument, so each encoder needs its own
+// one-line stub to pass its index in.
+//
+// One step is emitted per COMPLETE CLK cycle, and only when both halves of
+// that cycle agree on the direction. The interrupt fires on CHANGE, so each
+// detent is seen twice: once when CLK falls and once when it rises. On a
+// falling edge a high DT means clockwise; on a rising edge the same DT level
+// means the opposite, because the edge itself carries a sign. Two readings
+// that disagree are discarded.
+//
+// That is what makes this bounce-proof, and it is why the old version was
+// not. Contact chatter on CLK produces extra edges while DT sits still, so
+// the bounced edge computes the OPPOSITE direction to the real one, the two
+// halves disagree, and the step is thrown away instead of counted. Measured
+// on hardware 2026-10-12: the previous single-edge decoder emitted two CW
+// events in the middle of one continuous counter-clockwise turn of ENC3, and
+// roughly four events per detent on all three knobs.
+//
+// Direction sign established by measurement, not derived: with the old
+// decoder, turning clockwise reported CCW on all three encoders, so the
+// mapping below is the old one inverted. All three agreed, which is expected
+// - the A and B terminals were landed the same way round on all of them.
+void encTick(uint8_t i) {
   unsigned long now = micros();
-  if (now - enc1LastTime < ENC_DEBOUNCE_US) return;
+  if (now - encLastTime[i] < ENC_CHATTER_US) return;
 
-  int clk = digitalRead(ENC1_CLK);
-  if (clk != enc1LastCLK) {
-    if (clk == LOW) {
-      if (digitalRead(ENC1_DT) != clk) {
-        enc1Delta--;
-      } else {
-        enc1Delta++;
-      }
+  uint8_t clk = digitalRead(ENC_CLK[i]);
+  if (clk == encLastCLK[i]) return;
+  encLastCLK[i] = clk;
+  encLastTime[i] = now;
+
+  uint8_t dt = digitalRead(ENC_DT[i]);
+  int8_t dir = (clk == LOW) ? (dt ? 1 : -1) : (dt ? -1 : 1);
+
+  if (clk == LOW) {
+    encPending[i] = dir;
+  } else if (encPending[i] != 0) {
+    if (encPending[i] == dir) {
+      encDelta[i] += dir;
     }
-    enc1LastCLK = clk;
-    enc1LastTime = now;
+    encPending[i] = 0;
   }
 }
+
+void enc1ISR() { encTick(0); }
+void enc2ISR() { encTick(1); }
+void enc3ISR() { encTick(2); }
 
 void setup() {
   Serial.begin(9600);
@@ -106,11 +167,16 @@ void setup() {
     pinMode(readPins[i], INPUT_PULLUP);
   }
 
-  pinMode(ENC1_CLK, INPUT_PULLUP);
-  pinMode(ENC1_DT, INPUT_PULLUP);
-  pinMode(ENC1_SW, INPUT_PULLUP);
-  enc1LastCLK = digitalRead(ENC1_CLK);
-  attachInterrupt(digitalPinToInterrupt(ENC1_CLK), enc1ISR, CHANGE);
+  for (uint8_t i = 0; i < 3; i++) {
+    pinMode(ENC_CLK[i], INPUT_PULLUP);
+    pinMode(ENC_DT[i], INPUT_PULLUP);
+    pinMode(ENC_SW[i], INPUT_PULLUP);
+    encLastCLK[i] = digitalRead(ENC_CLK[i]);
+    encPending[i] = 0;
+  }
+  attachInterrupt(digitalPinToInterrupt(ENC_CLK[0]), enc1ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENC_CLK[1]), enc2ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENC_CLK[2]), enc3ISR, CHANGE);
 
   strip.begin();
   strip.setBrightness(50);
@@ -119,7 +185,7 @@ void setup() {
 
 void loop() {
   scanMatrix();
-  handleEncoder();
+  handleEncoders();
   handleSerialCommand();
   checkHostConnection();
   updateLeds();
@@ -165,26 +231,31 @@ void scanMatrix() {
   }
 }
 
-void handleEncoder() {
-  noInterrupts();
-  int delta = enc1Delta;
-  enc1Delta = 0;
-  interrupts();
+void handleEncoders() {
+  static bool lastSW[3] = {false, false, false};
+  static unsigned long lastSWChangeTime[3] = {0, 0, 0};
 
-  if (delta > 0) {
-    Serial.println("ENC:1:CW");
-  } else if (delta < 0) {
-    Serial.println("ENC:1:CCW");
-  }
+  for (uint8_t i = 0; i < 3; i++) {
+    noInterrupts();
+    int delta = encDelta[i];
+    encDelta[i] = 0;
+    interrupts();
 
-  static bool lastSW = false;
-  static unsigned long lastSWChangeTime = 0;
-  bool sw = (digitalRead(ENC1_SW) == LOW);
-  if (sw != lastSW && (millis() - lastSWChangeTime) > SW_DEBOUNCE_MS) {
-    lastSW = sw;
-    lastSWChangeTime = millis();
-    if (sw) {
-      Serial.println("ENC:1:PUSH");
+    if (delta != 0) {
+      Serial.print("ENC:");
+      Serial.print(i + 1);
+      Serial.println(delta > 0 ? ":CW" : ":CCW");
+    }
+
+    bool sw = (digitalRead(ENC_SW[i]) == LOW);
+    if (sw != lastSW[i] && (millis() - lastSWChangeTime[i]) > SW_DEBOUNCE_MS) {
+      lastSW[i] = sw;
+      lastSWChangeTime[i] = millis();
+      if (sw) {
+        Serial.print("ENC:");
+        Serial.print(i + 1);
+        Serial.println(":PUSH");
+      }
     }
   }
 }
