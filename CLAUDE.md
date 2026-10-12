@@ -46,6 +46,13 @@ teaching over speed.
   or API behavior.
 - Don't assume automatic progression to the next step — the user signals when
   a topic is "under consideration" and resumes when ready.
+- **Answer short. Always.** The user said plainly on 2026-10-12: "voce manda
+  muito texto e eu nao leio tudo, quero sempre o resumo do resumo de tudo".
+  Conclusion first, in one or two lines; tables instead of paragraphs; no
+  preamble, no discarded alternatives, no long source lists unless asked.
+  Offer the detail in one line rather than delivering it. A long answer is
+  not more complete - it is less read. Short does not mean vague: exact
+  numbers still required, just fewer words around them.
 - **Talk to the user in Portuguese** (settled 2026-10-03). An earlier request
   from 2026-07-18 made this project double as English practice, with English
   mistakes corrected in a blockquote. That lapsed in practice months ago and
@@ -115,19 +122,16 @@ teaching over speed.
   data pin (D16/MOSI); ~330Ω resistor in series on data, ~1000µF capacitor
   near the first LED (skippable for small bench tests, needed on the real
   16-LED build); brightness capped in software (USB current budget).
-- **⚠ LED colour order — this note and the firmware CONTRADICT each other
-  (spotted 2026-10-03, unresolved).** This file has long said the bench test
-  confirmed `NEO_RGB`, not the WS2812B-typical `NEO_GRB` — tested on a bare
-  4-pin through-hole LED (legs, in order from the cut-corner side: DIN, VDD,
-  GND, DOUT). But `firmware/stream_deck_macro.ino` line 39 instantiates the
-  strip with **`NEO_GRB`**.
-  Only one can be right. The firmware is the artifact that actually works on
-  the bench today (the LED modes were reconfirmed on hardware after the
-  "LEDs always red" fix), so `NEO_GRB` is the more likely truth and this note
-  is probably the stale side — but that has not been verified, so neither was
-  changed. **Settle it with one look at the real LEDs before the final 16-LED
-  build**, then correct whichever side is wrong. Verify per batch anyway if
-  the LED source changes.
+- **LED colour order: `NEO_GRB`, settled on hardware 2026-10-12.** This file
+  used to claim a bench test had confirmed `NEO_RGB` while the firmware used
+  `NEO_GRB` — a contradiction that sat unresolved from 2026-10-03. Settled by
+  asking the lit strip for solid red (`LED:MODE:SOLID:255,0,0`) and looking:
+  it showed **red**, so the firmware was right and the note was the stale
+  side. Red is the discriminating request — with the strip declared
+  `NEO_GRB` the library transmits G,R,B = `0,255,0`, which RGB hardware would
+  display as green. Blue is useless for this test: it is the last byte in
+  both orders and looks identical either way. Re-verify per batch if the LED
+  source changes.
 - The original 100+ LED reel (WS2812B DC5V, confirmed via listing) did not
   light in testing (ruled out: wiring, continuity, resistor, pin, board
   health, timing frequency, color order — all checked). Root cause not yet
@@ -146,27 +150,103 @@ The Pro Micro exposes 18 usable I/O pins. All 18 are allocated:
 
 | pins | use | status |
 | --- | --- | --- |
-| `3, 4, 5, 6` | matrix rows (OUTPUT) | in firmware |
-| `7, 8, 9, 10` | matrix columns (INPUT_PULLUP) | in firmware |
-| `0, A0, A1` | ENC1 — CLK, DT, SW | in firmware |
+| `7, 8, 9, 10` | matrix — driven bus (OUTPUT, idle HIGH) | in firmware |
+| `3, 4, 5, 6` | matrix — read bus (INPUT_PULLUP) | in firmware |
+| `1, A3, A2` | ENC1 — CLK, DT, SW | verified on hardware |
+| `0, A1, A0` | ENC2 — CLK, DT, SW | verified on hardware |
+| `2, 15, 14` | ENC3 — CLK, DT, SW | verified on hardware |
 | `16` | WS2812B data (D16/MOSI) | in firmware |
-| `2, A2, A3` | **ENC2 — CLK, DT, SW** | **not in firmware yet** |
-| `1, 14, 15` | **ENC3 — CLK, DT, SW** | **not in firmware yet** |
 
-**Why ENC2/ENC3 land exactly there — this is forced, not a preference.**
+**The two matrix buses are listed by electrical role, not as "rows" and
+"columns".** This table used to say `3-6` were the rows (OUTPUT) and `7-10`
+the columns (INPUT_PULLUP), which is backwards from the firmware and was
+corrected on 2026-10-12. On the real build the bare bus carrying the diode
+cathodes landed on `7-10`, so those are the pins the firmware drives LOW;
+`3-6` sit on the internal pull-ups and are read. Which axis of the pad each
+bus physically selects was established by measurement — see `docs/WIRING.md`.
+
+**The encoders are numbered top-to-bottom as they sit on the deck**, and the
+pin map follows that order: ENC1 takes the topmost pins on both edges, ENC3
+the lowest. Reassigned on 2026-10-12 once the wire colours were chosen (ENC1
+was previously on `0`/`A0`/`A1`); nothing was given up, because `DT`/`SW` are
+plain reads and the three `CLK` pins are interchangeable interrupt pins. Wire
+colours and the ground bus are in `docs/WIRING.md`.
+
+**Why the CLK pins land exactly there — this is forced, not a preference.**
 On the ATmega32U4 only five pins can raise an external interrupt:
-`0, 1, 2, 3, 7`. Of those, `0` is already ENC1's CLK, `3` is a matrix row and
-`7` is a matrix column. That leaves **only `1` and `2`**, and an encoder's CLK
-must be interrupt-driven (polling loses steps at speed). So ENC2's CLK and
-ENC3's CLK are the only possible assignment. DT and SW are plain reads, so
-they take the four remaining free pins (`14, 15, A2, A3`) and the split
-between them is arbitrary.
+`0, 1, 2, 3, 7`. Of those, `3` and `7` are both matrix pins (one on each
+bus). That leaves **exactly `0`, `1` and `2`** for three encoder clocks, and
+an encoder's CLK must be interrupt-driven (polling loses steps at speed). So
+the CLK assignment is forced; only which of the three goes to which encoder
+is a free choice. DT and SW are plain reads, so they take the six remaining
+free pins (`14, 15, A0, A1, A2, A3`) and the split between them is
+arbitrary.
 
 Consequence: there is no room for a fourth encoder, nor for any other
 interrupt-driven peripheral. Adding one means giving something up.
 
-**Blocked on hardware:** the encoders must be physically wired to those pins
-before the firmware work can be tested.
+**Verified on hardware 2026-10-12.** All three encoders wired, flashed
+(12766 bytes, 44% of flash) and measured: each turns both ways in the correct
+direction, each push toggles mute, and each emits **exactly one event per
+detent**. Measurement method and the two defects found on the way are in the
+"Encoder decoder" section below.
+
+### Encoder decoder — why it is not a simple edge count
+
+The obvious implementation (interrupt on CLK, read DT on the falling edge,
+guard with a time filter) was written first and **failed on hardware**. Two
+distinct defects, both measured on 2026-10-12:
+
+1. **Direction inverted on all three.** Turning clockwise reported `CCW`.
+   Expected, not a bug in itself: the A and B terminals were landed the same
+   way round on all three encoders, and A/B are interchangeable. Fixed by
+   inverting the sign mapping, not by resoldering.
+2. **Roughly four events per detent, with spurious reversals.** ENC3 emitted
+   two `CW` events in the middle of one continuous counter-clockwise turn.
+   On a volume knob that means the sound jumping the wrong way at random,
+   and the app would have been blamed.
+
+The cause of (2) was the `5000 us` filter between accepted edges. A time
+filter is the wrong tool here and fails in both directions at once: 5 ms is
+longer than the gap between the two CLK edges of a single detent on a fast
+turn, so it discards real steps, and it is shorter than contact bounce, so
+bounce still gets through and lands with DT in an arbitrary state.
+
+**The fix is structural, not a tuned constant.** `encTick()` now emits one
+step per *complete* CLK cycle and only when both halves of that cycle agree
+on the direction. The interrupt fires on CHANGE, so each detent is seen
+twice; on a falling edge a high DT means one direction, on a rising edge the
+same DT level means the opposite, because the edge itself carries a sign.
+This rejects bounce by construction: chatter produces extra edges while DT
+sits still, so a bounced edge computes the opposite direction to the real
+one, the two halves disagree, and the step is discarded rather than counted.
+
+A `1000 us` chatter filter remains, and **it cannot cost steps at any human
+speed**: for it to swallow a needed edge, two consecutive CLK edges would
+have to fall inside 1 ms, which means half a detent period under 1 ms, i.e.
+over 500 detents per second — 25 revolutions per second on a 20-detent
+encoder. Measured for comparison: a deliberately fast spin produced detents
+30 ms apart, 30x the filter.
+
+**Measured result after the fix** — read from the Windows audio API rather
+than the serial link, so the whole chain from contact to volume is covered:
+two clicks each way on each of the three encoders gave exactly +1,+1 and
+-1,-1; a counted run of ten clicks gave exactly ten events, and another ten
+in the other direction gave exactly ten. Ten pushes gave ten mute toggles,
+no double-fires. One self-cancelling reversal (-1 then +1 within 60 ms)
+appeared during unstructured fiddling but **never in a controlled run** —
+consistent with the knob rocking across a detent boundary by hand, not with
+a decoding error, and net zero either way.
+
+**How to measure this again without the serial port.** The app holds the
+port, so closing it changes what is under test. Instead poll
+`AudioUtilities.GetSpeakers().EndpointVolume` and log every change: each
+encoder click is exactly `VOLUME_STEP` (0.05), so the step count is
+arithmetic. Start the volume low — a reading clamped at 100% hides a surplus,
+which is the one thing worth detecting. Note that Windows' own volume OSD
+does **not** appear for changes made through the audio API, only for its own
+volume keys, so there is nothing on screen to read; and Windows' own keys
+move in 2% steps, which is how to tell them apart from pad events in the log.
 
 ### Case / component decisions (from a separate conversation, folded in 2026-07-21)
 - **Switches**: Outemu, cheapest available, plate-mount (clip into 14mm
@@ -727,24 +807,186 @@ indices that never arrived. It also pins the FQBN, including the **16 MHz**
 processor option — the core's default is 8 MHz, and flashing a 5V/16MHz board
 at 8 MHz breaks USB enumeration and looks exactly like a dead board.
 
-### ⚠ Unexplained: the app occasionally starts without logging anything
+### v4.4.0 (2026-10-12) — sound into the microphone, Apply button, config migration
 
-Seen three times (2026-10-06 at boot, 2026-10-11 at 23:12). The app runs, has
-its real Qt window (576x599, class `Qt...QWindowIcon` — not the 426x192
-single-instance MessageBox), connects to the pad, and writes **nothing** to
-`app.log` — not even to the temp-dir fallback that v4.0.0 added for exactly
-this case.
+#### Sound into the microphone (`MicMixer`)
 
-**Not reproducible.** Tested both launch paths back to back on 2026-10-11:
-`Start-Process` directly and the Start Menu shortcut (so, via explorer, the
-same path the user takes). Both logged correctly. The earlier "explorer
-doesn't log" theory is therefore wrong — do not act on it.
+**The constraint, established by research rather than assumed.** Windows gives
+a program no way to inject audio into *another* program's microphone stream.
+Applications enumerate capture *endpoints*; there is no user-space hook. The
+only two supported routes are:
 
-Left open deliberately rather than papered over with a guessed fix. If it
-recurs, the things already ruled out are: wrong binary (hash-matched), the
-single-instance MessageBox (window class checked), a failed write (the
-fallback log would exist and does not), and a stale read (verified with raw
-byte reads and the sandbox disabled).
+1. a **virtual audio driver** that registers its own capture endpoint —
+   kernel-mode, so it needs an EV certificate plus Microsoft attestation
+   signing through Partner Center (Azure Trusted Signing does not sign
+   drivers, and Microsoft removed trust for cross-signed drivers in the April
+   2026 update), or
+2. an **APO** (Audio Processing Object) attached to an existing capture
+   endpoint — a user-mode COM DLL, no kernel driver, registered by writing
+   `PKEY_FX_StreamEffectClsid` (`{D04E05A6-594B-4fb6-A80D-01AF5EED7D1D},5`)
+   under `HKLM\...\MMDevices\Audio\Capture\{endpoint}\FxProperties`.
+
+**This is how Soundpad does it.** Its developer describes the installer as
+installing "a user-mode audio driver extension", setting registry keys, and
+needing admin plus a restart — and the product installs **no new device**,
+which only an APO explains. The decisive tell: if you have no recording
+device at all, its developer tells you to install a virtual cable first and
+then install Soundpad *onto* it. An APO needs an endpoint to attach to.
+
+**Why we did not take the APO route.** Stock Windows 11 `audiodg.exe` is a
+protected process and loads only Microsoft-signed APOs; Microsoft's own docs
+say an APO fails to load once the `DisableProtectedAudioDG` test key is
+removed **even if WHQL-signed**. Equalizer APO and the Relay project both work
+around this by setting that key, which is a system-wide security downgrade.
+The user ruled out both cost and anything needing Microsoft approval, which
+leaves no path to a fully self-contained virtual microphone. Recorded so this
+is not re-litigated from scratch.
+
+**What was built instead.** The app became the mixer: it reads the real
+microphone, adds whatever the pad is playing, and writes the result to a
+second output device — a virtual audio cable such as VB-CABLE. Discord or a
+game is pointed at the cable instead of at the microphone and hears both.
+Only a dumb pipe is needed, so **VoiceMeeter is not required** and there is no
+mixer window for the user to learn: two dropdowns in Settings and a checkbox.
+
+Design notes worth keeping:
+
+- **Two independent streams, not one duplex stream.** The mic and the cable
+  are different devices with different clocks; PortAudio's duplex mode wants
+  one clock. A 12-block (~120 ms) queue absorbs the drift.
+- **Output stream starts before the input stream.** Started the other way
+  round, the queue fills to its cap before anything drains it, which shows up
+  as a permanent 120 ms of delay on your own voice.
+- **No lock on the audio path.** The queue is a `deque`; `append` and
+  `popleft` are atomic in CPython. A lock in a callback can stall it and
+  cause exactly the dropout it was meant to prevent. The *sound* list is
+  locked, because the GUI thread mutates it on a key press.
+- **Underrun emits silence, never repeated audio.**
+- **Mono to stereo duplicates, it does not average** — averaging makes every
+  mono clip quieter than every stereo one.
+- **The mix is clipped**; voice plus a clip at full scale overflows, and
+  overflow in float audio is an audible crackle.
+- **Devices are stored by NAME, not index.** PortAudio indices are
+  per-process and shift whenever hardware is plugged, removed or disabled, so
+  a saved index silently starts pointing at different hardware. Resolution
+  prefers the WASAPI entry.
+- A key sound goes to **both** `sd.play()` (the local monitor, so you hear
+  what you triggered) and `feed_sound()` (the mix, so everyone else does).
+- The whole feature is **inert until both devices are chosen**, so an install
+  with no virtual cable behaves exactly as before.
+
+**Verified.** `tests/test_mic_mixer.py` lifts the mixer section out of
+`app.py` and runs it against stubs — it tests the shipping code, not a copy,
+and fails loudly if the section markers move. 15 checks, all passing. On real
+hardware: 279 input callbacks against ~280 expected over 2.8 s, queue empty
+at the end (no latency creep), and a 440 Hz test tone arrived on the output at
+0.3076 against the 0.30 requested. Confirmed again in the **frozen** build,
+which logs `mixer de microfone: ligado`. The only untested link is VB-CABLE
+itself, which was not installed — and it is just another output device.
+
+#### Installer: the virtual-cable page
+
+A final page (`InfoAfterFile`, `vbcable_pt.txt` / `vbcable_en.txt`) explains
+the optional cable and links to it, plus an unchecked `[Run]` entry that opens
+the download page. **Bundling VB-CABLE itself would be redistribution**, which
+needs a paid licence from VB-Audio (their webshop lists 3.61 EUR/unit at 100,
+2.92 at 1000, 2.50 at 10000, with redistribution under their General Terms
+3.4). Linking is free, so the installer links.
+
+Also fixed: `setup.iss` had **no BOM**, so Inno Setup read it as the system
+ANSI codepage and any accented character in it came out as mojibake. It now
+carries a BOM, like the info pages already did.
+
+#### Uninstall left the autostart entry behind
+
+The uninstaller removed the program folder, the shortcuts and the registry
+uninstall key, but **not** the `HKCU\...\Run` value - which the app writes
+itself, so Inno Setup had never been told about it. The result was Windows
+trying to launch a deleted exe at every boot, on any machine that had ever
+uninstalled the app.
+
+Found by actually uninstalling and looking at what was left, which no earlier
+release had done. Fixed with a `[Registry]` entry carrying `ValueType: none`
+(so nothing is created or touched at install time, leaving the app in charge)
+plus `uninsdeletevalue`. Verified by a full install, run, uninstall cycle: the
+app re-creates the value, and the uninstaller now removes it.
+
+#### `fill_missing_defaults()`
+
+`load_config()` returned the parsed file as-is, with no merge against
+`DEFAULT_CONFIG` — so a config written by an older version was missing every
+setting added since. Each new setting had to remember `.get()` with a default,
+and the first one that forgot would crash **only on upgraded installs, never
+on a fresh one**, which is the worst place for that bug to hide. Missing keys
+are now filled on load.
+
+Only **absent** keys are filled; an existing value is never touched, and keys
+the defaults no longer mention (`led_speed_ms`, from v2) are left alone —
+deleting data on load is how settings get silently lost. Verified idempotent.
+
+#### Apply button in Color Settings
+
+`QDialogButtonBox.Apply` alongside OK and Cancel, so a pattern can be judged
+on the real LEDs without closing the dialog. It calls
+`apply_color_settings()`, the **same** function OK uses — two copies of
+"write config, push to the board, redraw" would drift apart the first time
+either changed. Qt supplies its own text for standard buttons, but this
+project hand-rolls i18n, so the label is set explicitly from `TR`.
+
+Note that **Cancel does not undo an earlier Apply**; Apply commits, as it does
+elsewhere in Windows. Reverting would mean snapshotting the config on open and
+pushing the old state back to the board.
+
+### RESOLVED: the app "starting without logging anything" was two log files
+
+**This was recorded here for over a week as unexplained. It is explained.**
+
+The symptom: the app would start, connect to the pad, and `app.log` would
+show no new lines - not an error, not a truncated line, nothing. It was never
+reproducible on demand, and both launch paths (Start Menu shortcut and
+`Start-Process`) logged correctly when tested back to back.
+
+**The cause is MSIX path redirection, and it only appears when an agent is
+involved.** Claude Code runs inside the Claude desktop app's MSIX container,
+so `%APPDATA%` writes from a process it launches are redirected to:
+
+```
+C:\Users\<user>\AppData\Local\Packages\Claude_<id>\LocalCache\Roaming\
+```
+
+An app launched by the agent therefore reads and writes a **different**
+`config.json` and a **different** `app.log` from the same app launched by the
+user from their Start Menu. Two parallel data stores, each one looking
+perfectly silent from the other side.
+
+Confirmed on 2026-10-12 by renaming the redirected copy, which made the real
+folder visible, and comparing:
+
+| store | log starts | buttons configured | last entry that day |
+| --- | --- | --- | --- |
+| real `%APPDATA%` (user's launches) | 2026-09-01 17:36, v3.3.0 | 10 | 10:09, COM7 |
+| MSIX-redirected (agent's launches) | 2026-09-01 16:38, v3.2.0 | 8 + 1 encoder | 11:27, COM9 |
+
+They had been diverging since **1 September**. The redirected copy is the one
+every agent-side investigation had been reading, which is why a user-launched
+run looked like it logged nothing.
+
+**Consequences worth remembering:**
+
+- **An agent verifying "the installed app works" is not verifying what the
+  user sees.** The binary is the same; the config and log are not. Any claim
+  about settings persisting, or about log contents, has to say which store it
+  came from.
+- `%LOCALAPPDATA%\Programs` did **not** get redirected in practice - install
+  and uninstall both landed on the real path, verified by checking for the
+  folder, the Start Menu shortcut and the `HKCU` Run entry in both views.
+  Redirection is copy-on-write, so only paths actually written by a contained
+  process get a shadow copy.
+- The two stores explain why the user's button count and the agent's never
+  matched during this period. Neither was corrupt.
+- **Check both before concluding anything about app state**, and prefer
+  asking the user what they see over trusting an agent-side read.
+
 
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,

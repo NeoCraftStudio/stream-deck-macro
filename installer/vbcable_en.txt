@@ -1,0 +1,18 @@
+﻿SOUND INTO YOUR MICROPHONE (optional)
+
+For a key's sound to reach Discord or a game alongside your voice, Windows
+needs a virtual audio cable. It is free and you install it once.
+
+NeoCraft Macro Desk handles the rest on its own: it detects the cable, mixes
+the sound with your microphone and configures itself. All you do is pick the
+cable as your microphone in Discord.
+
+Download VB-CABLE from:
+  https://vb-audio.com/Cable/
+
+Why it is not bundled with this installer: VB-CABLE belongs to another
+company, and redistributing their software requires a paid licence. Linking
+is free -- and this way you download straight from the official source.
+
+Without it, everything else in the program works normally. Only sending
+sound to your microphone is unavailable.
