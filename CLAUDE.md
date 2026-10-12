@@ -691,6 +691,61 @@ logged; without it at 699 s of uptime, the window is visible. **The third path
 (a real boot) was confirmed working by the user on 2026-10-06** — the app came
 up in the tray with no window. All three paths are now verified on hardware.
 
+### v4.3.0 (2026-10-11) — the VID:PID no longer vetoes the handshake
+
+`find_candidate_ports()` filtered strictly on `1B4F:9206`, so a pad presenting
+any other VID was invisible to the app however well it worked. That let the
+**weak** check (VID:PID, which identifies only the board MODEL) veto the
+**strong** one (the `ID?` handshake, which identifies this actual product).
+
+It bit us for real while assembling the first unit: the Pro Micro clone
+arrived from the factory presenting Arduino's `2341:8037`, not SparkFun's
+`1B4F:9206`. A VID-gated scan would never have probed it.
+
+Now the VID:PID is a **priority hint**. Matching ports are probed first, then
+any other USB serial port, and whatever answers the handshake is the pad.
+Ports with **no VID at all** are skipped — those are motherboard legacy/ACPI
+ports (`COM1`), they cannot be the pad, and probing one burns a full
+`IDENTIFY_TIMEOUT_S`.
+
+Flashing with the SparkFun FQBN *does* normalise the VID:PID (the sketch's USB
+descriptors come from whatever board definition compiled it, not from the
+bootloader — so every unit presents `1B4F:9206` regardless of which bootloader
+the clone shipped with). But relying on that alone leaves one unverifiable
+assumption between the user and a device that simply never appears.
+
+Also adds the diagnostics whose absence stretched that investigation: the
+probe cycle logs which ports it will try and in what order, and says so
+outright when nothing answered.
+
+**`tools/flash_pad.ps1`** is new, for building several units: it flashes one
+pad and then *proves* it works. avr109 can report success on an unprogrammed
+board, and a batch of clones reliably contains boards that never enumerate, so
+"no error" is not evidence. The script waits for the board to come back as
+`1B4F:9206`, requires an answer to `ID?`, then walks all 16 keys and names the
+indices that never arrived. It also pins the FQBN, including the **16 MHz**
+processor option — the core's default is 8 MHz, and flashing a 5V/16MHz board
+at 8 MHz breaks USB enumeration and looks exactly like a dead board.
+
+### ⚠ Unexplained: the app occasionally starts without logging anything
+
+Seen three times (2026-10-06 at boot, 2026-10-11 at 23:12). The app runs, has
+its real Qt window (576x599, class `Qt...QWindowIcon` — not the 426x192
+single-instance MessageBox), connects to the pad, and writes **nothing** to
+`app.log` — not even to the temp-dir fallback that v4.0.0 added for exactly
+this case.
+
+**Not reproducible.** Tested both launch paths back to back on 2026-10-11:
+`Start-Process` directly and the Start Menu shortcut (so, via explorer, the
+same path the user takes). Both logged correctly. The earlier "explorer
+doesn't log" theory is therefore wrong — do not act on it.
+
+Left open deliberately rather than papered over with a guessed fix. If it
+recurs, the things already ruled out are: wrong binary (hash-matched), the
+single-instance MessageBox (window class checked), a failed write (the
+fallback log would exist and does not), and a stale read (verified with raw
+byte reads and the sandbox disabled).
+
 ### Firmware ↔ app protocol
 - Firmware is "dumb": only reports raw events over serial (`BTN:5:DOWN`,
   `ENC:2:CW`, `ENC:2:PUSH`). The app decides actions.

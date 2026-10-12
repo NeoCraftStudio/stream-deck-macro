@@ -62,7 +62,11 @@ flowchart TD
 
 ## Still open
 
+- [x] Button matrix wired and verified on the assembled pad (2026-10-11) —
+      all 16 keys report BTN:0..BTN:15 in order, 2FX lands on 15. See
+      `docs/WIRING.md`.
 - [ ] Encoders 2 and 3 in the firmware (the app already exposes all three;
-      only ENC1 is reported by the firmware today)
+      only ENC1 is reported by the firmware today). Pinout is closed and
+      recorded in `CLAUDE.md`; blocked on wiring them to those pins.
 - [ ] Final 16-LED build — the original LED reel is faulty, only spare bare
       LEDs have been verified so far
