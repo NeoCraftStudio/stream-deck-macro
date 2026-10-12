@@ -11,23 +11,31 @@ on the real build the two buses landed the opposite way round from what this
 file originally assumed. There is no canonical assignment — the firmware has
 to match the hardware.
 
-`drivePins[4] = {7, 8, 9, 10}` are `OUTPUT`, idle `HIGH`, pulled `LOW` one at
-a time during the scan. `readPins[4] = {3, 4, 5, 6}` are `INPUT_PULLUP` and
+`drivePins[4] = {10, 9, 8, 7}` are `OUTPUT`, idle `HIGH`, pulled `LOW` one at
+a time during the scan. `readPins[4] = {6, 5, 4, 3}` are `INPUT_PULLUP` and
 read `LOW` when a key on the active row is pressed.
+
+**Both arrays run high-to-low on purpose.** The buses are landed on the pins
+in the opposite order to the pad's own geometry, so ascending arrays put index
+0 on the bottom-right key instead of the top-left one — the whole grid comes
+out rotated 180 degrees (`reported = 15 - actual`). Reversing both arrays
+fixes it without touching the `row*4+col` maths.
 
 | matrix | pin | wire on the pad |
 | --- | --- | --- |
-| row 0 (driven) | `D7` | bare bus, diode **cathode** |
-| row 1 | `D8` | bare bus |
-| row 2 | `D9` | bare bus |
-| row 3 | `D10` | bare bus |
-| column 0 (read) | `D3` | green, no diode |
-| column 1 | `D4` | green |
-| column 2 | `D5` | green |
-| column 3 | `D6` | green |
+| row 0, top (driven) | `D10` | bare bus, diode **cathode** |
+| row 1 | `D9` | bare bus |
+| row 2 | `D8` | bare bus |
+| row 3, bottom | `D7` | bare bus |
+| column 0, left (read) | `D6` | green, no diode |
+| column 1 | `D5` | green |
+| column 2 | `D4` | green |
+| column 3, right | `D3` | green |
 
 **Verified on hardware 2026-10-11**: pressing all sixteen keys left-to-right,
-top-to-bottom produced `BTN:0` through `BTN:15` in exact order.
+top-to-bottom produced `BTN:0` through `BTN:15` in exact order, with the 2FX
+key landing on `BTN:15` as the app requires (it is the one key the app refuses
+to let you assign an action to).
 
 **The matrix uses no GND.** Rows drive, columns read through the internal
 pull-ups, and each switch bridges a row and a column through its diode. All

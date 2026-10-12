@@ -20,11 +20,19 @@
 // silent — not scrambled, silent. That was the real fault on 2026-10-11:
 // the bare (cathode) bus had been landed on D7-D10, which the firmware holds
 // at 5 V, so nothing could ever conduct.
-// Which axis each bus physically selects was established by measurement, not
-// by reading the wiring: pressing left-to-right across the pad changes the
-// READ index, pressing top-to-bottom changes the DRIVEN one.
-const int drivePins[4] = {7, 8, 9, 10};  // pad ROWS — bare wire, diode cathode
-const int readPins[4]  = {3, 4, 5, 6};   // pad COLUMNS — green wire, no diode
+// Which axis each bus physically selects, AND which end of each bus is index
+// 0, were both established by measurement rather than by reading the wiring.
+// Pressing left-to-right across the pad changes the READ index; pressing
+// top-to-bottom changes the DRIVEN one.
+//
+// Both arrays run high-to-low because the buses are landed on the pins in the
+// opposite order to the pad's own geometry. Measured 2026-10-11: with the
+// arrays ascending, the 2FX key (BTN:15, bottom-right) reported BTN:0 and its
+// neighbour reported BTN:1 - the whole grid came out rotated 180 degrees,
+// reported = 15 - actual. Reversing both arrays maps index 0 back onto the
+// top-left key without touching the row*4+col maths.
+const int drivePins[4] = {10, 9, 8, 7};  // pad ROWS — bare wire, diode cathode
+const int readPins[4]  = {6, 5, 4, 3};   // pad COLUMNS — green wire, no diode
 bool btnState[16] = {false};
 unsigned long lastChangeTime[16] = {0};
 const unsigned long DEBOUNCE_MS = 30;
