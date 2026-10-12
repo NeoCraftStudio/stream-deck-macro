@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "4.2.0"
+APP_VERSION = "4.3.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -1039,15 +1039,40 @@ def on_serial_connected():
 
 
 def find_candidate_ports():
-    return sorted(
-        p.device for p in serial.tools.list_ports.comports()
-        if p.vid == PAD_VID and p.pid == PAD_PID
-    )
+    """Ports worth trying the identity handshake on, best candidates first.
+
+    The USB VID:PID is a PRIORITY HINT here, never a gate. It identifies the
+    board MODEL; the handshake identifies this actual product. Letting the
+    weak check veto the strong one is backwards, and it bit us for real: on
+    2026-10-11 a Pro Micro clone arrived from the factory presenting Arduino's
+    2341:8037 instead of SparkFun's 1B4F:9206, and a VID-gated scan would
+    never have probed it — the pad would have been invisible while working
+    perfectly. Flashing with the SparkFun FQBN does normalise the VID:PID, but
+    relying on that alone leaves one unverifiable assumption between the user
+    and a device that simply never appears.
+
+    Ports with no VID at all are skipped: those are motherboard legacy/ACPI
+    serial ports (COM1 and friends), they cannot be the pad, and probing one
+    burns a full IDENTIFY_TIMEOUT_S for nothing.
+    """
+    preferidas, outras = [], []
+    for porta in serial.tools.list_ports.comports():
+        if porta.vid is None:
+            continue
+        if porta.vid == PAD_VID and porta.pid == PAD_PID:
+            preferidas.append(porta.device)
+        else:
+            outras.append(porta.device)
+    return sorted(preferidas) + sorted(outras)
 
 
 def start_probe_cycle():
     global probe_candidates
     probe_candidates = find_candidate_ports()
+    if probe_candidates:
+        log("portas candidatas, na ordem: " + ", ".join(probe_candidates))
+    else:
+        log("nenhuma porta USB-serial encontrada para sondar")
     try_next_candidate()
 
 
@@ -1070,6 +1095,7 @@ def try_next_candidate():
         return
     ser = None
     connection_state = "disconnected"
+    log("nenhuma porta respondeu ao handshake — o pad não está conectado")
 
 
 def confirm_connected(port):
