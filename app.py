@@ -64,7 +64,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "4.5.0"
+APP_VERSION = "4.6.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -140,6 +140,12 @@ DEFAULT_CONFIG = {
         "mic_device_id": "",
         "mic_mix_output_device": "",
         "mic_mix_output_device_id": "",
+        # How loud the key sounds are in the MIX only, as a percentage. This
+        # is not the per-sound volume (which also changes what you hear) and
+        # not the microphone level (which is never touched) - it is purely
+        # the balance between your voice and the sounds for the people
+        # listening on the other end.
+        "mic_mix_sound_volume": 100,
     },
     "buttons": {},
     "encoders": {},
@@ -398,6 +404,16 @@ TR = {
         "pt": "{name}  — não encontrado",
     },
     "mic_mix_help_button": {"en": "How does this work?", "pt": "Como isto funciona?"},
+    "mic_mix_volume_label": {
+        "en": "Volume of the sounds inside the microphone",
+        "pt": "Volume dos sons dentro do microfone",
+    },
+    "mic_mix_volume_hint": {
+        "en": "Only changes how loud the key sounds are for the people "
+              "listening. Your voice and what you hear are untouched.",
+        "pt": "Muda só o quanto o som das teclas chega alto para quem está "
+              "ouvindo. Sua voz e o que você ouve não mudam.",
+    },
     "mic_mix_help_title": {
         "en": "Sound into the microphone",
         "pt": "Som no microfone",
@@ -1258,7 +1274,12 @@ class MicMixer:
             self._sounds = []
 
     def feed_sound(self, data, samplerate):
-        """Queue a decoded sound to be mixed into the microphone signal."""
+        """Queue a decoded sound to be mixed into the microphone signal.
+
+        The mix volume is read here, per sound, rather than cached when the
+        mixer starts: moving the slider then takes effect on the next key
+        press instead of needing the streams restarted.
+        """
         if not self.is_running():
             return
         try:
@@ -1268,6 +1289,18 @@ class MicMixer:
             return
         if len(buf) == 0:
             return
+
+        ganho = config["settings"].get("mic_mix_sound_volume", 100) / 100.0
+        if ganho <= 0:
+            # Silenced on purpose. Return rather than queue a buffer of
+            # zeros, which would cost the same work for no sound.
+            return
+        if ganho != 1.0:
+            # Copy: buf can still be the caller's array when no resampling
+            # happened, and scaling in place would quietly change the volume
+            # of what the user hears in their own headphones too.
+            buf = buf * np.float32(ganho)
+
         with self._sounds_lock:
             self._sounds.append([buf, 0])
 
@@ -2193,6 +2226,23 @@ class SettingsDialog(QDialog):
             "output", config["settings"].get("mic_mix_output_device", ""),
             autodetect_virtual_cable(),
         )
+        # 0 silences the sounds in the call without touching the voice; 200
+        # is there because a quiet clip is a real case, and the mix is
+        # clipped anyway so a boost cannot overflow - it only trades
+        # headroom, which the hint about clipping in the help dialog covers.
+        self.mic_volume_slider = QSlider(Qt.Horizontal)
+        self.mic_volume_slider.setRange(0, 200)
+        self.mic_volume_slider.setValue(
+            int(config["settings"].get("mic_mix_sound_volume", 100))
+        )
+        self.mic_volume_label = QLabel(f"{self.mic_volume_slider.value()}%")
+        self.mic_volume_slider.valueChanged.connect(
+            lambda v: self.mic_volume_label.setText(f"{v}%")
+        )
+
+        self.mic_volume_hint = QLabel(tr("mic_mix_volume_hint"))
+        self.mic_volume_hint.setWordWrap(True)
+
         self.mic_help_button = QPushButton(tr("mic_mix_help_button"))
         self.mic_help_button.clicked.connect(
             lambda: MicMixHelpDialog(self).exec()
@@ -2229,6 +2279,14 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.mic_box)
         layout.addWidget(QLabel(tr("mic_mix_output_label")))
         layout.addWidget(self.mic_out_box)
+
+        layout.addWidget(QLabel(tr("mic_mix_volume_label")))
+        mic_vol_row = QHBoxLayout()
+        mic_vol_row.addWidget(self.mic_volume_slider)
+        mic_vol_row.addWidget(self.mic_volume_label)
+        layout.addLayout(mic_vol_row)
+        layout.addWidget(self.mic_volume_hint)
+
         layout.addWidget(self.mic_hint)
 
         layout.addWidget(buttons)
@@ -2449,6 +2507,7 @@ def on_settings_clicked():
     config["settings"]["language"] = dialog.language_box.currentData()
     config["settings"]["fx2_brightness"] = dialog.fx2_brightness_slider.value()
     config["settings"]["mic_mix_enabled"] = dialog.mic_mix_check.isChecked()
+    config["settings"]["mic_mix_sound_volume"] = dialog.mic_volume_slider.value()
     for chave_nome, chave_id, caixa in (
         ("mic_device", "mic_device_id", dialog.mic_box),
         ("mic_mix_output_device", "mic_mix_output_device_id", dialog.mic_out_box),
