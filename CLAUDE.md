@@ -937,6 +937,33 @@ Note that **Cancel does not undo an earlier Apply**; Apply commits, as it does
 elsewhere in Windows. Reverting would mean snapshotting the config on open and
 pushing the old state back to the board.
 
+### v4.6.0 (2026-10-13) — mix volume for the key sounds
+
+A slider for how loud the key sounds are **inside the microphone mix** only.
+It is the third volume control in this feature and the three must not be
+confused:
+
+| control | affects what you hear | affects what the call hears |
+| --- | --- | --- |
+| per-sound `sound_volume` (in the button's config) | yes | yes |
+| `mic_mix_sound_volume` (this slider) | **no** | yes |
+| the microphone itself | n/a | never touched by this app |
+
+0% silences the sounds in a call without disturbing the voice, which is the
+case that justified a separate control rather than reusing the per-sound one.
+200% is allowed because a quiet clip is real; the mix is clipped at 1.0
+regardless, so a boost trades headroom rather than overflowing.
+
+Two implementation details that are easy to get wrong:
+
+- The gain is read **per sound in `feed_sound()`**, not cached when the mixer
+  starts, so moving the slider takes effect on the next key press instead of
+  needing the streams restarted.
+- The scaling **copies** the buffer. `buf` can still be the caller's array
+  when no resampling was needed, and scaling in place would change the volume
+  of what the user hears in their own headphones too — the exact thing this
+  control is supposed not to do. There is a test for it.
+
 ### v4.5.0 (2026-10-13) — a device name is not an identity
 
 Three defects, all found by watching a real user configure the thing rather

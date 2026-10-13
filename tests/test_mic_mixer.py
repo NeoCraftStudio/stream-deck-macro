@@ -152,6 +152,55 @@ def main():
     checar("som terminado e descartado",
            np.allclose(out2, 0.0) and len(m._sounds) == 0, str(len(m._sounds)))
 
+    print("volume dos sons no mix")
+    cfg = ns["config"]["settings"]
+    original = np.full((frames, CH), 0.5, dtype=np.float32)
+
+    m.stop()
+    m._output_stream = object()
+    cfg["mic_mix_sound_volume"] = 50
+    m.feed_sound(original, RATE)
+    out = np.zeros((frames, CH), dtype=np.float32)
+    m._on_output(out, frames, None, None)
+    checar("50% corta o som pela metade", np.allclose(out, 0.25), str(out[0]))
+    # O mesmo array vai para o monitor local; escalar no lugar mudaria o
+    # volume do que o usuario ouve, que nao e o que a barra controla.
+    checar("array do chamador intacto", np.allclose(original, 0.5), str(original[0]))
+
+    m.stop()
+    m._output_stream = object()
+    cfg["mic_mix_sound_volume"] = 0
+    m.feed_sound(original, RATE)
+    out = np.zeros((frames, CH), dtype=np.float32)
+    m._on_output(out, frames, None, None)
+    checar("0% silencia no mix", np.allclose(out, 0.0) and len(m._sounds) == 0)
+
+    m.stop()
+    m._output_stream = object()
+    cfg["mic_mix_sound_volume"] = 200
+    m.feed_sound(np.full((frames, CH), 0.3, dtype=np.float32), RATE)
+    out = np.zeros((frames, CH), dtype=np.float32)
+    m._on_output(out, frames, None, None)
+    checar("200% dobra", np.allclose(out, 0.6), str(out[0]))
+
+    m.stop()
+    m._output_stream = object()
+    cfg["mic_mix_sound_volume"] = 200
+    m.feed_sound(np.full((frames, CH), 0.8, dtype=np.float32), RATE)
+    out = np.zeros((frames, CH), dtype=np.float32)
+    m._on_output(out, frames, None, None)
+    checar("reforco ainda e ceifado em 1.0", np.allclose(out, 1.0), str(out.max()))
+
+    m.stop()
+    m._output_stream = object()
+    cfg.pop("mic_mix_sound_volume", None)
+    m.feed_sound(np.full((frames, CH), 0.4, dtype=np.float32), RATE)
+    out = np.zeros((frames, CH), dtype=np.float32)
+    m._on_output(out, frames, None, None)
+    # Config antigo, sem a chave: tem que soar igual a 100%, nao mudo.
+    checar("sem a chave assume 100%", np.allclose(out, 0.4), str(out[0]))
+    m.stop()
+
     print("limites da fila")
     m.stop()
     for _ in range(CAP + 5):
