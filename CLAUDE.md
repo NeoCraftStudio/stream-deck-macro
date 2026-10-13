@@ -937,6 +937,84 @@ Note that **Cancel does not undo an earlier Apply**; Apply commits, as it does
 elsewhere in Windows. Reverting would mean snapshotting the config on open and
 pushing the old state back to the board.
 
+### v4.5.0 (2026-10-13) — a device name is not an identity
+
+Three defects, all found by watching a real user configure the thing rather
+than by testing it myself.
+
+#### The dropdown offered devices nothing should ever open
+
+`audio_device_names()` listed every PortAudio device across every host API.
+PortAudio enumerates each endpoint once per API, and the names differ per API,
+so collapsing by name was not enough:
+
+- **MME truncates names to 31 characters**, so "CABLE Input (VB-Audio Virtual
+  Cable)" appeared as "CABLE Input (VB-Audio Virtual C" — looking like a
+  second, different device next to the real one.
+- **WDM-KS exposes raw kernel endpoints** under names that mean nothing:
+  "Output (VB-Audio Point)", "SPDIF Out (Realtek HDA SPDIF Out)", and
+  "Output ()" with no name at all.
+
+The user picked a WDM-KS entry, which no voice application would have
+listened to. Now filtered to **WASAPI only** — the same list the Sound
+control panel shows, full untruncated names, and the API `find_audio_device`
+already preferred, so the list and the resolution finally agree. Two entries
+per dropdown instead of ten.
+
+#### Renaming a device in Windows broke the configuration
+
+Devices were stored by name. The user renamed the cable to "CABLE Input (o
+app escreve aqui)" — sensible, and it silently broke the saved selection,
+with the combo box falling back to "(none)" as though nothing had ever been
+configured.
+
+**Windows endpoint ids are the stable identity** and pycaw (already a
+dependency, for volume control) exposes them: a GUID assigned when the device
+is first seen, unchanged by renaming, replugging, or PortAudio renumbering.
+The `FriendlyName` it reports matches PortAudio's WASAPI device name exactly,
+so an **id resolves to a name resolves to an index**.
+
+`resolve_audio_device()` tries the id first and falls back to the saved name
+(for configs written before ids existed, and if the COM lookup is
+unavailable). When the id resolves to a *different* name than the one saved,
+the config **heals itself**: the new name is written back and logged. Proven
+end to end by writing a deliberately non-existent name next to a correct id
+and restarting the installed build — it found the device, corrected the name,
+saved, and started.
+
+The log says which path each device took: `(microfone por nome, cabo por id)`.
+
+Auto-detection matches on the **device description** — the trailing
+`(VB-Audio Virtual Cable)` that Windows appends from the driver and the user
+*cannot* rename — not on "CABLE Input", which they can.
+
+#### The feedback loop that was one click away
+
+Once the cable is the default recording device, "my microphone" and "the
+Windows default" look like the same safe choice — but selecting `CABLE
+Output` as the mixer's input means the app reads what it just wrote, adds the
+mic, and writes it back. The level reaches full scale in well under a second,
+in the user's own headphones.
+
+`same_virtual_cable()` compares the driver descriptions of the two selected
+devices; if they match and name a cable, `start()` **refuses** and says why.
+Auto-detection never proposes a virtual cable as the microphone.
+
+#### Help button
+
+A dialog, not a tooltip, because the half people get wrong happens **outside
+this app**: picking the *other* end of the cable in Discord. It states which
+end the app writes to, which end Discord must read, that monitoring is
+unaffected, that the app must stay running, and that renaming is now safe.
+
+#### Rule worth keeping
+
+**Identify external resources by whatever the system guarantees is stable,
+and treat the human-readable name as a label.** Device names, COM port
+numbers and PortAudio indices are all display or session detail. This project
+has now been bitten by the index version (ports), the name version (audio
+devices), and the VID:PID version (the pad itself).
+
 ### RESOLVED: the app "starting without logging anything" was two log files
 
 **This was recorded here for over a week as unexplained. It is explained.**

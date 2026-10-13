@@ -15,8 +15,10 @@ Run:  .venv\\Scripts\\python.exe tests\\test_mic_mixer.py
 import collections
 import io
 import os
+import re
 import sys
 import threading
+import warnings
 
 import numpy as np
 
@@ -57,6 +59,9 @@ def carregar():
         "sd": SdStub,
         "collections": collections,
         "threading": threading,
+        "re": re,
+        "warnings": warnings,
+        "AudioUtilities": None,  # so o caminho por id usa, e ele nao e testado aqui
         "log": lambda *_a, **_k: None,
         "config": {"settings": {}},
     }
@@ -163,6 +168,32 @@ def main():
     out = np.zeros((frames, CH), dtype=np.float32)
     m._on_output(out, frames, None, None)
     checar("microfone mono vira estereo", np.allclose(out, 0.4), str(out[0]))
+
+    print("nome de dispositivo")
+    desc = ns["device_description"]
+    mesmo = ns["same_virtual_cable"]
+    checar("descricao e o ultimo parenteses",
+           desc("CABLE Input (VB-Audio Virtual Cable)") == "VB-Audio Virtual Cable",
+           desc("CABLE Input (VB-Audio Virtual Cable)"))
+    # Windows mostra "<nome amigavel> (<descricao do driver>)". Renomear muda
+    # so a primeira parte, entao a descricao e o unico pedaco confiavel.
+    checar("sobrevive a renomeacao",
+           desc("CABLE Input (o app escreve aqui) (VB-Audio Virtual Cable)")
+           == "VB-Audio Virtual Cable")
+    checar("sem parenteses devolve vazio", desc("Microfone") == "")
+    checar("nome vazio nao explode", desc("") == "" and desc(None) == "")
+
+    print("guarda de realimentacao")
+    a = "CABLE Input (o app escreve aqui) (VB-Audio Virtual Cable)"
+    b = "CABLE Output (saida mixada) (VB-Audio Virtual Cable)"
+    # Ler o que acabou de escrever sobe ate o clipe em menos de um segundo.
+    checar("duas pontas do mesmo cabo sao detectadas", mesmo(a, b))
+    checar("microfone de verdade passa",
+           not mesmo("Microfone (fifine SC3)", a))
+    checar("dois alto-falantes comuns passam",
+           not mesmo("Alto-falantes (fifine SC3)", "Speakers (Realtek HD Audio)"))
+    checar("descricao vazia nao casa com descricao vazia",
+           not mesmo("Microfone", "Alto-falantes"))
 
     print("blocos de tamanhos diferentes")
     m.stop()

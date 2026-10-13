@@ -36,6 +36,8 @@ import time
 import json
 import threading
 import collections
+import re
+import warnings
 import math
 import tempfile
 import winreg
@@ -62,7 +64,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "NeoCraft Macro Desk"
 # Keep in sync with MyAppVersion in installer/setup.iss — not read from
 # there automatically, this is the one place app.py itself knows its version.
-APP_VERSION = "4.4.0"
+APP_VERSION = "4.5.0"
 REPO_URL = "https://github.com/NeoCraftStudio/stream-deck-macro"
 MANUAL_URLS = {
     "en": f"{REPO_URL}/blob/master/docs/MANUAL.md",
@@ -130,8 +132,14 @@ DEFAULT_CONFIG = {
         # or disabled, so a saved index silently starts pointing at the wrong
         # hardware. An empty string means "not chosen yet".
         "mic_mix_enabled": False,
+        # The NAME is for display and as a fallback. The ID is what actually
+        # identifies the device: a Windows endpoint id is a GUID that survives
+        # renaming, which a name does not. Storing only the name broke the
+        # moment a device was renamed in Windows - see resolve_audio_device.
         "mic_device": "",
+        "mic_device_id": "",
         "mic_mix_output_device": "",
+        "mic_mix_output_device_id": "",
     },
     "buttons": {},
     "encoders": {},
@@ -385,6 +393,81 @@ TR = {
         "pt": "Não foi possível iniciar o mixer de microfone: {error}",
     },
     "none_selected": {"en": "(none)", "pt": "(nenhum)"},
+    "device_missing": {
+        "en": "{name}  — not found",
+        "pt": "{name}  — não encontrado",
+    },
+    "mic_mix_help_button": {"en": "How does this work?", "pt": "Como isto funciona?"},
+    "mic_mix_help_title": {
+        "en": "Sound into the microphone",
+        "pt": "Som no microfone",
+    },
+    "mic_mix_help_body": {
+        "en": """<p>Windows does not let one program put audio straight into
+another program's microphone. The way around it is a <b>virtual audio
+cable</b>: a pipe with two ends.</p>
+
+<p><b>Your microphone</b> — your real microphone, where your voice goes in.
+This app reads from it.</p>
+
+<p><b>Virtual cable</b> — the <b>IN</b> end of the pipe, usually called
+<i>CABLE Input</i>. This app writes your voice mixed with the key sounds
+into it.</p>
+
+<p><b>In Discord</b> (or a game, OBS, Zoom, Teams) pick the <b>other end</b>
+as your microphone — the <b>OUT</b> end, usually called <i>CABLE Output</i>.
+That is where the mix comes out.</p>
+
+<p style="margin-left:12px">
+app &nbsp;→&nbsp; <b>CABLE Input</b><br>
+Discord &nbsp;←&nbsp; <b>CABLE Output</b>
+</p>
+
+<p>Never pick the same end in both places. If you do, this app refuses to
+start the mixer, because reading what it just wrote is a feedback loop.</p>
+
+<p>You keep hearing everything in your headphones exactly as before. This
+changes nothing about what you hear.</p>
+
+<p><b>This app has to be running.</b> If you close it the cable goes silent
+and Discord stops hearing you, so leave "Start automatically with Windows"
+ticked.</p>
+
+<p>Renaming these devices in Windows is safe — they are tracked by a
+permanent identifier, not by their name.</p>""",
+        "pt": """<p>O Windows não deixa um programa colocar áudio direto no
+microfone de outro. A saída é um <b>cabo de áudio virtual</b>: um cano com
+duas pontas.</p>
+
+<p><b>Seu microfone</b> — o microfone de verdade, onde a sua voz entra.
+É daqui que este app lê.</p>
+
+<p><b>Cabo virtual</b> — a ponta de <b>ENTRADA</b> do cano, normalmente
+chamada <i>CABLE Input</i>. É aqui que este app escreve a sua voz já
+misturada com o som das teclas.</p>
+
+<p><b>No Discord</b> (ou no jogo, OBS, Zoom, Teams) escolha como microfone a
+<b>outra ponta</b> — a de <b>SAÍDA</b>, normalmente chamada
+<i>CABLE Output</i>. É de lá que a mistura sai.</p>
+
+<p style="margin-left:12px">
+app &nbsp;→&nbsp; <b>CABLE Input</b><br>
+Discord &nbsp;←&nbsp; <b>CABLE Output</b>
+</p>
+
+<p>Nunca escolha a mesma ponta nos dois lugares. Se escolher, este app se
+recusa a ligar o mixer: ler o que ele acabou de escrever é realimentação.</p>
+
+<p>Você continua ouvindo tudo no seu fone exatamente como antes. Isto não
+muda nada do que você ouve.</p>
+
+<p><b>Este app precisa estar aberto.</b> Se você fechar, o cabo fica mudo e o
+Discord para de ouvir você — por isso deixe "Iniciar automaticamente com o
+Windows" marcado.</p>
+
+<p>Renomear esses dispositivos no Windows é seguro: eles são identificados
+por um código permanente, não pelo nome.</p>""",
+    },
     "pattern_label": {"en": "Pattern:", "pt": "Padrão:"},
     "pattern_solid": {"en": "Solid Color", "pt": "Cor Sólida"},
     "pattern_breathing": {"en": "Breathing", "pt": "Respiração"},
@@ -743,25 +826,55 @@ MIC_QUEUE_MAX_BLOCKS = 12
 
 
 def audio_device_names(kind):
-    """Device names for a combo box, one entry per name.
+    """Device names for a combo box: WASAPI only, one entry per name.
 
-    PortAudio lists the same physical device once per host API (MME,
-    DirectSound, WASAPI, WDM-KS), which would show every microphone four
-    times over. Collapsing by name keeps the list readable; resolving a name
-    back to an index is find_audio_device's job.
+    PortAudio lists every device once per host API, and collapsing by name is
+    not enough to clean that up, because the names themselves differ per API:
+
+    - **MME truncates names to 31 characters**, so "CABLE Input (VB-Audio
+      Virtual Cable)" arrives as "CABLE Input (VB-Audio Virtual C" and looks
+      like a second, different device sitting next to the real one.
+    - **WDM-KS exposes raw kernel endpoints** under names that mean nothing to
+      a user and are not what any normal application opens - "Output
+      (VB-Audio Point)", "SPDIF Out (Realtek HDA SPDIF Out)", and even
+      "Output ()" with no name at all.
+
+    Both were offered in the dropdown on 2026-10-12 and the user picked a
+    WDM-KS entry, which no voice application would ever have listened to.
+
+    WASAPI is the right filter: it is the modern Windows audio path, it
+    reports full untruncated names, it lists exactly the endpoints the Sound
+    control panel shows, and find_audio_device already prefers it when
+    resolving a name back to an index - so the list and the resolution agree.
+    Falls back to every host API only if WASAPI reports nothing at all, which
+    would mean something is badly wrong rather than that the list is empty.
     """
     chave = "max_input_channels" if kind == "input" else "max_output_channels"
-    nomes = []
     try:
         dispositivos = sd.query_devices()
     except Exception as e:
         log(f"audio: nao foi possivel listar dispositivos - {e}")
+        return []
+
+    def coletar(somente_wasapi):
+        nomes = []
+        for d in dispositivos:
+            if d[chave] <= 0:
+                continue
+            if somente_wasapi:
+                try:
+                    if sd.query_hostapis(d["hostapi"])["name"] != "Windows WASAPI":
+                        continue
+                except Exception:
+                    continue
+            if d["name"] not in nomes:
+                nomes.append(d["name"])
         return nomes
-    for d in dispositivos:
-        if d[chave] <= 0:
-            continue
-        if d["name"] not in nomes:
-            nomes.append(d["name"])
+
+    nomes = coletar(True)
+    if not nomes:
+        log("audio: nenhum dispositivo WASAPI, usando todas as APIs")
+        nomes = coletar(False)
     return nomes
 
 
@@ -793,6 +906,132 @@ def find_audio_device(name, kind):
         if reserva is None:
             reserva = i
     return reserva
+
+
+def endpoint_name_map():
+    """{endpoint id: friendly name} for every Windows audio endpoint.
+
+    The endpoint id is a GUID Windows assigns when the device is first seen
+    and never changes - not when the device is renamed, not when it is
+    unplugged and replugged, not when PortAudio renumbers its indices. The
+    friendly name is what PortAudio reports as the device name on WASAPI, so
+    an id resolves to a name resolves to an index.
+
+    Returns {} on any failure, which the callers treat as "fall back to the
+    saved name" rather than as an error - this is an improvement to device
+    identification, not a new requirement for the feature to work at all.
+    """
+    try:
+        with warnings.catch_warnings():
+            # pycaw warns about properties some endpoints do not expose. They
+            # are not the two properties used here.
+            warnings.simplefilter("ignore")
+            mapa = {}
+            for d in AudioUtilities.GetAllDevices():
+                try:
+                    ident, nome = d.id, d.FriendlyName
+                except Exception:
+                    continue
+                if ident and nome:
+                    mapa[str(ident)] = str(nome)
+            return mapa
+    except Exception as e:
+        log(f"audio: nao foi possivel ler os ids de endpoint - {e}")
+        return {}
+
+
+def device_id_for_name(name):
+    """The stable endpoint id behind a device name, or '' if unknown."""
+    if not name:
+        return ""
+    for ident, nome in endpoint_name_map().items():
+        if nome == name:
+            return ident
+    return ""
+
+
+def resolve_audio_device(saved_id, saved_name, kind):
+    """Find a saved device again. Returns (index, current_name, how).
+
+    Tries the stable id first, so a device the user renamed in Windows is
+    still found - and found under its NEW name, which the caller writes back
+    so the UI stops showing the old one. Falls back to the saved name for
+    configs written before ids were stored, and for the case where the id
+    lookup itself is unavailable.
+
+    `how` is one of "id", "nome" or "" and exists so the caller can log which
+    path was taken; a resolution that silently changes its basis is the kind
+    of thing that makes a later bug impossible to reason about.
+    """
+    if saved_id:
+        nome_atual = endpoint_name_map().get(saved_id)
+        if nome_atual:
+            idx = find_audio_device(nome_atual, kind)
+            if idx is not None:
+                return idx, nome_atual, "id"
+    if saved_name:
+        idx = find_audio_device(saved_name, kind)
+        if idx is not None:
+            return idx, saved_name, "nome"
+    return None, None, ""
+
+
+def device_description(name):
+    """The trailing '(...)' Windows appends to a device name.
+
+    Windows shows an endpoint as "<friendly name> (<device description>)".
+    The user can rename the friendly part; the description comes from the
+    driver and they cannot. That makes it the one piece of a device name
+    worth matching on.
+    """
+    m = re.search(r"\(([^()]*)\)\s*$", name or "")
+    return m.group(1).strip() if m else ""
+
+
+def same_virtual_cable(a, b):
+    """True when two device names are the two ends of ONE virtual cable.
+
+    Feeding the mixer from the same cable it writes to is a runaway feedback
+    loop: the app reads what it just wrote, adds the microphone, writes it
+    back, and the level climbs until it clips. Easy to do by accident now
+    that the cable is the default recording device, because "my microphone"
+    and "the Windows default" look like the same safe choice.
+    """
+    da, db = device_description(a), device_description(b)
+    return bool(da) and da == db and "cable" in da.lower()
+
+
+def autodetect_virtual_cable():
+    """The virtual cable's input end, chosen without asking.
+
+    Matches on the driver-supplied description rather than on "CABLE Input",
+    because the friendly part is exactly what a user renames.
+    """
+    for nome in audio_device_names("output"):
+        if "vb-audio" in device_description(nome).lower():
+            return nome
+    return ""
+
+
+def autodetect_microphone():
+    """A real microphone - never a virtual cable.
+
+    Picking the Windows default input would be wrong here: once the cable is
+    set as the default recording device, the default IS the cable, and using
+    it as the mixer's input creates the feedback loop same_virtual_cable
+    guards against.
+    """
+    entradas = audio_device_names("input")
+    try:
+        padrao = sd.query_devices(kind="input")["name"]
+    except Exception:
+        padrao = None
+    if padrao in entradas and "vb-audio" not in device_description(padrao).lower():
+        return padrao
+    for nome in entradas:
+        if "vb-audio" not in device_description(nome).lower():
+            return nome
+    return ""
 
 
 def to_mix_shape(data):
@@ -905,25 +1144,67 @@ class MicMixer:
         if not config["settings"].get("mic_mix_enabled"):
             return
 
-        mic_name = config["settings"].get("mic_device", "")
-        out_name = config["settings"].get("mic_mix_output_device", "")
-        if not mic_name or not out_name:
+        ajustes = config["settings"]
+        if not ajustes.get("mic_device") and not ajustes.get("mic_mix_output_device"):
             log("mixer de microfone: desligado, dispositivos nao escolhidos")
             return
 
-        mic_idx = find_audio_device(mic_name, "input")
-        out_idx = find_audio_device(out_name, "output")
-        # A named device can simply be gone: an interface unplugged, a
-        # virtual cable uninstalled. Name which one, because "the mixer
-        # failed" is useless when either of two devices could be at fault.
+        mic_idx, mic_name, mic_via = resolve_audio_device(
+            ajustes.get("mic_device_id", ""), ajustes.get("mic_device", ""), "input"
+        )
+        out_idx, out_name, out_via = resolve_audio_device(
+            ajustes.get("mic_mix_output_device_id", ""),
+            ajustes.get("mic_mix_output_device", ""),
+            "output",
+        )
+        # A device can simply be gone: an interface unplugged, a cable
+        # uninstalled. Name which one, because "the mixer failed" is useless
+        # when either of two devices could be at fault.
         if mic_idx is None:
-            self.last_error = f"microfone nao encontrado: {mic_name}"
+            self.last_error = (
+                f"microfone nao encontrado: {ajustes.get('mic_device') or '(nenhum)'}"
+            )
             log(f"mixer de microfone: {self.last_error}")
             return
         if out_idx is None:
-            self.last_error = f"saida virtual nao encontrada: {out_name}"
+            self.last_error = (
+                "cabo virtual nao encontrado: "
+                f"{ajustes.get('mic_mix_output_device') or '(nenhum)'}"
+            )
             log(f"mixer de microfone: {self.last_error}")
             return
+        if same_virtual_cable(mic_name, out_name):
+            # Refused rather than started: the loop builds to full scale in
+            # well under a second and the first thing the user would hear is
+            # a scream in their own headphones.
+            self.last_error = (
+                "microfone e cabo virtual sao as duas pontas do mesmo cabo - "
+                "isso realimenta. Escolha o seu microfone de verdade."
+            )
+            log(f"mixer de microfone: {self.last_error}")
+            return
+
+        # Self-heal. A device renamed in Windows keeps its endpoint id, so it
+        # was still found above - under its new name. Write that back, and
+        # fill in the id for configs saved before ids were stored, so the next
+        # rename costs nothing either.
+        mudou = False
+        for chave_nome, chave_id, nome_atual in (
+            ("mic_device", "mic_device_id", mic_name),
+            ("mic_mix_output_device", "mic_mix_output_device_id", out_name),
+        ):
+            if ajustes.get(chave_nome) != nome_atual:
+                log(f"mixer de microfone: '{ajustes.get(chave_nome)}' foi renomeado "
+                    f"para '{nome_atual}', atualizando")
+                ajustes[chave_nome] = nome_atual
+                mudou = True
+            if not ajustes.get(chave_id):
+                novo = device_id_for_name(nome_atual)
+                if novo:
+                    ajustes[chave_id] = novo
+                    mudou = True
+        if mudou:
+            save_config()
 
         try:
             self._mic_blocks.clear()
@@ -958,7 +1239,8 @@ class MicMixer:
 
         self.mic_name = mic_name
         self.output_name = out_name
-        log(f"mixer de microfone: ligado - {mic_name} -> {out_name}")
+        log(f"mixer de microfone: ligado - {mic_name} -> {out_name} "
+            f"(microfone por {mic_via or '?'}, cabo por {out_via or '?'})")
 
     def stop(self):
         for atributo in ("_input_stream", "_output_stream"):
@@ -1803,7 +2085,59 @@ class ConfigDialog(QDialog):
         }
 
 
+class MicMixHelpDialog(QDialog):
+    """Explains the two cable ends. Its own dialog rather than a tooltip
+    because the thing being explained is a two-sided routing decision, and
+    the half that happens outside this app - picking the other end in Discord
+    - is the half people get wrong."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(tr("mic_mix_help_title"))
+
+        corpo = QLabel(tr("mic_mix_help_body"))
+        corpo.setWordWrap(True)
+        corpo.setTextFormat(Qt.RichText)
+        corpo.setMinimumWidth(460)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(self.accept)
+
+        layout = QVBoxLayout()
+        layout.addWidget(corpo)
+        layout.addWidget(buttons)
+        self.setLayout(layout)
+
+
 class SettingsDialog(QDialog):
+    @staticmethod
+    def _build_device_box(kind, salvo, sugerido=""):
+        """Combo of audio devices, with the saved one preselected.
+
+        If the saved device is not in the list it is added anyway, flagged as
+        missing, instead of the box silently falling back to "(none)". A
+        device disappears for ordinary reasons - unplugged, uninstalled, or
+        **renamed in Windows**, which happened here on 2026-10-12 - and
+        showing the name that was configured is what tells the user which of
+        those it was. Silently reading "(none)" looks like the setting was
+        never saved.
+        """
+        box = QComboBox()
+        box.addItem(tr("none_selected"), "")
+        nomes = audio_device_names(kind)
+        for nome in nomes:
+            box.addItem(nome, nome)
+        if salvo and salvo not in nomes:
+            box.addItem(tr("device_missing", name=salvo), salvo)
+        # Nothing saved yet: preselect the obvious choice instead of making
+        # the user work out which of these is the cable. Preselected, not
+        # applied - it only takes effect if they press OK.
+        alvo = salvo or sugerido
+        indice = box.findData(alvo)
+        box.setCurrentIndex(indice if indice >= 0 else 0)
+        return box
+
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(tr("settings_title"))
@@ -1851,21 +2185,18 @@ class SettingsDialog(QDialog):
             bool(config["settings"].get("mic_mix_enabled", False))
         )
 
-        self.mic_box = QComboBox()
-        self.mic_box.addItem(tr("none_selected"), "")
-        for nome in audio_device_names("input"):
-            self.mic_box.addItem(nome, nome)
-        indice = self.mic_box.findData(config["settings"].get("mic_device", ""))
-        self.mic_box.setCurrentIndex(indice if indice >= 0 else 0)
-
-        self.mic_out_box = QComboBox()
-        self.mic_out_box.addItem(tr("none_selected"), "")
-        for nome in audio_device_names("output"):
-            self.mic_out_box.addItem(nome, nome)
-        indice = self.mic_out_box.findData(
-            config["settings"].get("mic_mix_output_device", "")
+        self.mic_box = self._build_device_box(
+            "input", config["settings"].get("mic_device", ""),
+            autodetect_microphone(),
         )
-        self.mic_out_box.setCurrentIndex(indice if indice >= 0 else 0)
+        self.mic_out_box = self._build_device_box(
+            "output", config["settings"].get("mic_mix_output_device", ""),
+            autodetect_virtual_cable(),
+        )
+        self.mic_help_button = QPushButton(tr("mic_mix_help_button"))
+        self.mic_help_button.clicked.connect(
+            lambda: MicMixHelpDialog(self).exec()
+        )
 
         self.mic_hint = QLabel(tr("mic_mix_hint"))
         self.mic_hint.setWordWrap(True)
@@ -1888,7 +2219,11 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.language_box)
         layout.addWidget(self.autostart_check)
 
-        layout.addWidget(QLabel(tr("mic_mix_group")))
+        mic_titulo = QHBoxLayout()
+        mic_titulo.addWidget(QLabel(tr("mic_mix_group")))
+        mic_titulo.addStretch()
+        mic_titulo.addWidget(self.mic_help_button)
+        layout.addLayout(mic_titulo)
         layout.addWidget(self.mic_mix_check)
         layout.addWidget(QLabel(tr("mic_device_label")))
         layout.addWidget(self.mic_box)
@@ -2114,8 +2449,18 @@ def on_settings_clicked():
     config["settings"]["language"] = dialog.language_box.currentData()
     config["settings"]["fx2_brightness"] = dialog.fx2_brightness_slider.value()
     config["settings"]["mic_mix_enabled"] = dialog.mic_mix_check.isChecked()
-    config["settings"]["mic_device"] = dialog.mic_box.currentData()
-    config["settings"]["mic_mix_output_device"] = dialog.mic_out_box.currentData()
+    for chave_nome, chave_id, caixa in (
+        ("mic_device", "mic_device_id", dialog.mic_box),
+        ("mic_mix_output_device", "mic_mix_output_device_id", dialog.mic_out_box),
+    ):
+        nome = caixa.currentData()
+        anterior = config["settings"].get(chave_nome)
+        config["settings"][chave_nome] = nome
+        # Look the id up only when the choice actually changed: it costs a
+        # COM enumeration, and OK is pressed far more often than the device
+        # is changed.
+        if nome != anterior or not config["settings"].get(chave_id):
+            config["settings"][chave_id] = device_id_for_name(nome)
     save_config()
 
     # Restarted rather than reconfigured: PortAudio streams are bound to a
